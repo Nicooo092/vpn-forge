@@ -62,23 +62,33 @@ class ServiceUsersTable
                     ->placeholder('never connected')
                     ->tooltip(fn (ServiceUser $record) => $record->last_handshake_at?->toDayDateTimeString())
                     ->sortable(),
+                // Hidden by default, both of them: last connected only ever
+                // differs from last handshake by the length of one session,
+                // and the peer address is rarely what you came to look at.
+                // Eight columns did not fit and the table scrolled sideways.
                 TextColumn::make('last_connected_at')
                     ->label('Last connected')
                     ->since()
                     ->placeholder('never connected')
                     ->tooltip(fn (ServiceUser $record) => $record->last_connected_at?->toDayDateTimeString())
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('last_seen_ip')
                     ->label('Last seen from')
                     ->placeholder('--')
                     ->fontFamily('mono')
-                    ->copyable(),
+                    ->copyable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                // Stacked rather than written on one line: "738.6 MB in /
+                // 3.6 GB out" is the widest cell in the table by some margin.
                 TextColumn::make('traffic')
                     ->label('Traffic')
                     ->state(fn (ServiceUser $record) => $record->last_cumulative_bytes_in + $record->last_cumulative_bytes_out === 0
                         ? null
-                        : self::formatBytes($record->last_cumulative_bytes_in).' in / '.self::formatBytes($record->last_cumulative_bytes_out).' out')
+                        : self::formatBytes($record->last_cumulative_bytes_in).' in')
+                    ->description(fn (ServiceUser $record) => $record->last_cumulative_bytes_in + $record->last_cumulative_bytes_out === 0
+                        ? null
+                        : self::formatBytes($record->last_cumulative_bytes_out).' out')
                     ->placeholder('no traffic yet')
                     ->tooltip('Cumulative since the tunnel was last brought up'),
             ])
