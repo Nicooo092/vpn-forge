@@ -56,13 +56,17 @@ setup_privileged_worker() {
   chmod 770 /etc/vpnforge/dnsmasq
   chmod g+s /etc/vpnforge/dnsmasq
 
-  # /var/log/vpnforge: DnsmasqManager creates/truncates each service's DNS
-  # log file here before dnsmasq itself ever starts. dnsmasq (which
-  # subsequently owns the file day-to-day -- see vpnforge-dnsmasq@.service's
-  # ExecStartPost) runs as root regardless, so this grant is purely for
-  # that initial worker-side creation step.
+  # /var/log/vpnforge: DnsmasqManager (running as vpnforge-worker) creates/
+  # truncates each service's DNS log file here before dnsmasq itself ever
+  # starts -- but vpnforge-agent also has to traverse this same directory
+  # to open those same files for tailing (each individual file is already
+  # its own 640 vpnforge-agent, via the dnsmasq unit's ExecStartPost, so
+  # content access is still gated per-file). Same reasoning as /etc/vpnforge
+  # above: 755, not 770 -- group vpnforge-worker keeps write access, and
+  # "other" gets enough (read+traverse, no write) for vpnforge-agent to
+  # reach the individual files, which is all it needs.
   chgrp vpnforge-worker /var/log/vpnforge
-  chmod 770 /var/log/vpnforge
+  chmod 755 /var/log/vpnforge
 
   output "Granting vpnforge-worker permission to manage its systemd units..."
   # CAP_NET_ADMIN (below) covers wg/easyrsa/iptables, but systemctl

@@ -30,6 +30,17 @@ func TailDNSLog(ctx context.Context, path string, serviceID int64, store *Store,
 	openFile := func() bool {
 		f, err := os.Open(path)
 		if err != nil {
+			// Silent for "doesn't exist yet" (expected during the startup
+			// race with dnsmasq -- next tick will just try again), but a
+			// permission error means retrying forever won't help and
+			// something's misconfigured -- worth surfacing rather than
+			// swallowing, since this exact failure mode (a directory
+			// permission regression) previously went unnoticed for a
+			// while specifically because nothing logged it.
+			if os.IsPermission(err) {
+				log.Printf("dns[%d]: permission denied opening %s: %v", serviceID, path, err)
+			}
+
 			return false
 		}
 
