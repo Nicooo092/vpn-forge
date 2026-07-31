@@ -20,6 +20,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -131,6 +132,9 @@ class ServiceUsersRelationManager extends RelationManager
                     // ~330 bytes.
                     ->visible(fn (ServiceUser $record) => $record->service->protocol === VpnProtocol::WireGuard)
                     ->modalHeading(fn (ServiceUser $record) => "Scan to import {$record->name}")
+                    // Wide enough that a dense config still renders large
+                    // enough to scan -- see the view for the measurements.
+                    ->modalWidth(Width::TwoExtraLarge)
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close')
                     ->modalContent(fn (ServiceUser $record) => view(
