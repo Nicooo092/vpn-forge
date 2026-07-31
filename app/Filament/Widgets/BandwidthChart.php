@@ -19,7 +19,7 @@ class BandwidthChart extends ChartWidget
     // an empty column beside it.
     protected int|string|array $columnSpan = 'full';
 
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 3;
 
     /**
      * Largest byte value in the current window, kept from getData() so
