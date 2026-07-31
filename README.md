@@ -13,7 +13,7 @@ their knowledge. See [Privacy notes](#privacy-notes) below before turning on log
 Run as root on a fresh **Ubuntu 24.04 LTS** server:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Nicooo092/vpn-forge/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/Nicooo092/vpn-forge/main/install.sh -o /tmp/vpnforge-install.sh && sudo bash /tmp/vpnforge-install.sh
 ```
 
 You'll be asked for a domain (or IP), an admin account, and whether to enable
