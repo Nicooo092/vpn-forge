@@ -29,8 +29,15 @@ class TrafficLogsRelationManager extends RelationManager
     {
         return $table
             ->columns([
+                // Eight columns overflowed the page and forced a horizontal
+                // scrollbar. These three are still one click away under the
+                // column toggle, but none of them earns permanent space: kind
+                // repeats on every row and already has a filter, source IP
+                // identifies the same peer the User column names, and the
+                // summary restates the resolver and answer columns.
                 TextColumn::make('kind')
-                    ->badge(),
+                    ->badge()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('serviceUser.name')
                     ->label('User')
                     ->placeholder('unknown peer'),
@@ -40,7 +47,8 @@ class TrafficLogsRelationManager extends RelationManager
                 TextColumn::make('source_ip')
                     ->label('Source IP')
                     ->fontFamily('mono')
-                    ->placeholder('--'),
+                    ->placeholder('--')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('host')
                     ->label('Domain')
                     ->searchable()
@@ -65,6 +73,9 @@ class TrafficLogsRelationManager extends RelationManager
                     ->description(fn (TrafficLog $record) => count($record->detail['answers'] ?? []) > 1
                         ? '+'.(count($record->detail['answers']) - 1).' more'
                         : null)
+                    // The remaining records and the alias chain, without
+                    // spending a column on either.
+                    ->tooltip(fn (TrafficLog $record) => $this->answerTooltip($record))
                     ->placeholder('no answer'),
                 // ->state(), not ->formatStateUsing(): detail is a json column
                 // cast to an array, and Filament runs the formatter once per
@@ -78,7 +89,8 @@ class TrafficLogsRelationManager extends RelationManager
                     ->label('Summary')
                     ->state(fn (TrafficLog $record) => $this->summarize($record))
                     ->placeholder('no detail recorded')
-                    ->limit(60),
+                    ->limit(60)
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('kind')->options(TrafficLogKind::class),
@@ -137,6 +149,24 @@ class TrafficLogsRelationManager extends RelationManager
             })
             ->defaultSort('occurred_at', 'desc')
             ->poll('15s');
+    }
+
+    private function answerTooltip(TrafficLog $record): ?string
+    {
+        $answers = $record->detail['answers'] ?? [];
+        $chain = $record->detail['cname_chain'] ?? [];
+
+        $parts = [];
+
+        if (count($answers) > 1) {
+            $parts[] = implode(', ', $answers);
+        }
+
+        if ($chain !== []) {
+            $parts[] = 'via '.implode(' -> ', $chain);
+        }
+
+        return $parts === [] ? null : implode(' | ', $parts);
     }
 
     private function summarize(TrafficLog $record): ?string
