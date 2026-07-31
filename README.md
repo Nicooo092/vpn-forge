@@ -192,9 +192,40 @@ certbot --nginx -d your-domain --agree-tos -m you@example.com --redirect
 ```bash
 useradd --system --no-create-home --shell /usr/sbin/nologin vpnforge-worker
 
-mkdir -p /etc/wireguard /etc/openvpn/vpnforge /etc/vpnforge/dnsmasq /var/log/vpnforge
-chgrp -R vpnforge-worker /etc/wireguard /etc/openvpn/vpnforge /etc/vpnforge
-chmod -R 750 /etc/wireguard /etc/openvpn/vpnforge /etc/vpnforge
+mkdir -p /etc/wireguard /etc/openvpn/vpnforge /etc/openvpn/server /etc/vpnforge/dnsmasq /var/log/vpnforge
+
+# /etc/wireguard and /etc/openvpn/vpnforge hold real secrets; /etc/openvpn/server
+# is where Ubuntu's packaged openvpn-server@.service hardcodes its
+# WorkingDirectory + a relative --config, so server.conf has to live there too.
+# 770 (not 750): the worker doesn't just read these, it creates files/
+# subdirectories in them, which needs the group write bit. Setgid so anything
+# created inside later keeps the right group regardless of which identity
+# creates it.
+chgrp -R vpnforge-worker /etc/wireguard /etc/openvpn/vpnforge
+chmod -R 770 /etc/wireguard /etc/openvpn/vpnforge
+chmod g+s /etc/wireguard /etc/openvpn/vpnforge
+chgrp vpnforge-worker /etc/openvpn/server /etc/vpnforge/dnsmasq
+chmod 770 /etc/openvpn/server /etc/vpnforge/dnsmasq
+chmod g+s /etc/openvpn/server /etc/vpnforge/dnsmasq
+
+# /etc/vpnforge itself and /var/log/vpnforge stay 755 (not 770): vpnforge-agent
+# (a separate, unrelated group) needs to traverse both to reach agent.yml and
+# each service's DNS log file -- a directory's own permissions gate traversal
+# into it regardless of what's inside, so the worker keeps write access via the
+# group while "other" still gets read+traverse.
+chmod 755 /etc/vpnforge /var/log/vpnforge
+chgrp vpnforge-worker /var/log/vpnforge
+```
+
+`systemctl enable`/`disable`/`restart` on the WireGuard/OpenVPN/dnsmasq systemd
+units goes over D-Bus to systemd, which polkit -- not `CAP_NET_ADMIN` -- gates;
+without a rule granting it, every provisioning job fails with "Interactive
+authentication required" (and `NoNewPrivileges=yes` below rules out `sudo` as a
+fix, since sudo itself needs a new-privilege execve to elevate):
+
+```bash
+mkdir -p /etc/polkit-1/rules.d
+cp installer/templates/polkit/vpnforge-worker.rules /etc/polkit-1/rules.d/49-vpnforge-worker.rules
 ```
 
 Copy `installer/templates/systemd/vpnforge-worker.service.tpl` to
@@ -214,7 +245,10 @@ go build -o /usr/local/bin/vpnforge-agent .
 setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/vpnforge-agent
 
 useradd --system --no-create-home --shell /usr/sbin/nologin vpnforge-agent
-chgrp vpnforge-agent /var/log/vpnforge
+# Not chgrp'd to vpnforge-agent -- /var/log/vpnforge is already 755 (see
+# step 5), which is enough for this separate, unrelated user to traverse it
+# and open each service's DNS log file (each already 640 to vpnforge-agent
+# specifically, via that unit's ExecStartPost).
 
 cat > /etc/vpnforge/agent.yml <<EOF
 database:
