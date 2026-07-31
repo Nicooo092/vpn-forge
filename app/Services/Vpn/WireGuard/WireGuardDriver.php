@@ -105,6 +105,23 @@ class WireGuardDriver implements VpnProtocolDriver
         $this->applyServiceConfig($service);
     }
 
+    public function rotateUserKeys(Service $service, ServiceUser $user): void
+    {
+        [$privateKey, $publicKey] = $this->generateKeypair();
+
+        $user->wg_private_key = $privateKey;
+        $user->wg_public_key = $publicKey;
+        $user->wg_preshared_key = $this->generatePresharedKey();
+        $user->key_rotations = $user->key_rotations + 1;
+        $user->issued_at = now();
+        $user->save();
+
+        // Syncing the interface drops the old public key from the peer list,
+        // so the previous config stops authenticating immediately rather
+        // than lingering until its next handshake.
+        $this->applyServiceConfig($service);
+    }
+
     public function removeUser(Service $service, ServiceUser $user): void
     {
         // No certificate/key revocation step exists for WireGuard -- simply

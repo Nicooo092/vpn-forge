@@ -52,6 +52,15 @@ interface VpnProtocolDriver
     public function removeUser(Service $service, ServiceUser $user): void;
 
     /**
+     * Issue fresh key material for a user who keeps their identity: same
+     * row, same name, same labels, same history. Anything the old config
+     * could do stops working the moment this returns, which is the point --
+     * it is what a lost or stolen device calls for, where revoking and
+     * recreating would throw away everything recorded about that person.
+     */
+    public function rotateUserKeys(Service $service, ServiceUser $user): void;
+
+    /**
      * Build the single downloadable config file (.conf / .ovpn) for an
      * existing user. Safe to call from the unprivileged web process --
      * only reads already-generated material, does not touch the network

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ServiceUserStatus;
+use App\Models\Concerns\RecordsChanges;
 use App\Services\Vpn\ClientConfigFile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,26 @@ use Illuminate\Support\Facades\DB;
 class ServiceUser extends Model
 {
     use HasFactory;
+    use RecordsChanges;
+
+    /**
+     * Rewritten by the poller every minute for every connected user. Logging
+     * these would bury every real change under thousands of lines.
+     *
+     * @return list<string>
+     */
+    protected function auditIgnored(): array
+    {
+        return [
+            'last_handshake_at',
+            'last_connected_at',
+            'last_seen_ip',
+            'last_cumulative_bytes_in',
+            'last_cumulative_bytes_out',
+            'certificate_serial',
+            'issued_at',
+        ];
+    }
 
     protected $fillable = [
         'service_id',
@@ -24,6 +45,7 @@ class ServiceUser extends Model
         'wg_preshared_key',
         'openvpn_common_name',
         'certificate_serial',
+        'key_rotations',
         'issued_at',
         'revoked_at',
         'logging_override',

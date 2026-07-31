@@ -101,6 +101,46 @@ class OpenVpnDriver implements VpnProtocolDriver
         // ca.crt + the CRL dynamically, per connection.
     }
 
+    public function rotateUserKeys(Service $service, ServiceUser $user): void
+    {
+        $dir = $this->serviceDir($service);
+        $previousCn = $user->openvpn_common_name;
+
+        // Revoke first: the old certificate has to stop being accepted, and
+        // easy-rsa will not build a certificate for a common name already in
+        // its index -- which is why the reissued one carries a suffix.
+        if ($previousCn !== null) {
+            Process::path($dir)->env(['EASYRSA_BATCH' => '1'])->run(['./easyrsa', 'revoke', $previousCn])->throw();
+            Process::path($dir)->env(['EASYRSA_BATCH' => '1'])->run(['./easyrsa', 'gen-crl'])->throw();
+            File::copy("{$dir}/pki/crl.pem", "{$dir}/crl.pem");
+        }
+
+        $user->key_rotations = $user->key_rotations + 1;
+        $newCn = $this->safeCommonName($service, $user);
+
+        Process::path($dir)->env(['EASYRSA_BATCH' => '1'])
+            ->run(['./easyrsa', 'build-client-full', $newCn, 'nopass'])
+            ->throw();
+
+        $user->openvpn_common_name = $newCn;
+        $user->certificate_serial = $this->readCertSerial($dir, $newCn);
+        $user->issued_at = now();
+        $user->save();
+
+        // A suspended user keeps their client-config-dir entry, which is
+        // named after the common name that just changed.
+        $this->syncClientConfigDir($service);
+
+        // OpenVPN only re-reads the CRL when a connection renegotiates, so
+        // the old certificate would otherwise keep working for up to an
+        // hour. Cut the session now.
+        try {
+            $this->managementCommand($service, "kill {$previousCn}");
+        } catch (RuntimeException) {
+            // Nothing connected, or the server is not running.
+        }
+    }
+
     public function removeUser(Service $service, ServiceUser $user): void
     {
         $dir = $this->serviceDir($service);
@@ -241,7 +281,13 @@ class OpenVpnDriver implements VpnProtocolDriver
     {
         // Decoupled from the admin-facing display name, which may contain
         // characters easy-rsa's CN validation rejects.
-        return "svc{$service->id}-user{$user->id}";
+        $base = "svc{$service->id}-user{$user->id}";
+
+        // Unsuffixed for the first certificate, so names issued before key
+        // rotation existed keep matching the files already on disk.
+        return $user->key_rotations > 0
+            ? "{$base}-r{$user->key_rotations}"
+            : $base;
     }
 
     private function readCertSerial(string $dir, string $commonName): ?string

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Services\Schemas;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
 use App\Models\Service;
+use App\Services\Vpn\DnsPresets;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
@@ -358,11 +359,35 @@ class ServiceForm
                                 ->helperText('Required for DNS traffic logging: queries have to pass through this service\'s resolver for the capture agent to see them. It forwards on to the upstreams below, so name resolution is unaffected. Turning this off leaves the Traffic logs tab permanently empty.')
                                 ->columnSpanFull(),
 
+                            // Not stored: it only decides what goes into the
+                            // upstream list below, which is the value the
+                            // resolver actually reads.
+                            Select::make('dns_preset')
+                                ->label('Upstream DNS provider')
+                                ->options(DnsPresets::options())
+                                ->default(fn (Get $get) => DnsPresets::keyFor($get('config.dns_upstreams') ?? []))
+                                ->live()
+                                ->dehydrated(false)
+                                ->afterStateUpdated(function (Set $set, ?string $state): void {
+                                    if ($state === null || $state === DnsPresets::CUSTOM) {
+                                        return; // Leave whatever is there to be edited by hand.
+                                    }
+
+                                    $set('config.dns_upstreams', DnsPresets::serversFor($state));
+                                })
+                                ->helperText(fn (Get $get) => DnsPresets::noteFor($get('dns_preset'))
+                                    ?? 'Where this service\'s resolver forwards queries it cannot answer itself. Each service can use a different one.')
+                                ->columnSpanFull(),
+
                             TagsInput::make('config.dns_upstreams')
                                 ->label('Upstream DNS servers')
                                 ->default(['1.1.1.1', '1.0.0.1'])
                                 ->dehydratedWhenHidden()
-                                ->helperText('Where this service\'s resolver forwards queries it cannot answer itself.')
+                                // Shown for a preset too, read-only, so what
+                                // was chosen is visible rather than implied.
+                                ->disabled(fn (Get $get) => $get('dns_preset') !== DnsPresets::CUSTOM)
+                                ->dehydrated()
+                                ->helperText('Cleared, this falls back to Cloudflare rather than leaving the resolver with nowhere to forward to.')
                                 ->columnSpanFull(),
 
                             TagsInput::make('config.blocked_domains')

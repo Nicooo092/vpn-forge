@@ -8,6 +8,7 @@ use App\Filament\Resources\ServiceUsers\ServiceUserResource;
 use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Jobs\Vpn\RemoveServiceUser;
+use App\Jobs\Vpn\RotateUserKeys;
 use App\Models\ServiceUser;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -205,6 +206,24 @@ class ServiceUsersTable
                             'filament.service-user-qr',
                             self::qrModalData($record),
                         )),
+                    Action::make('rotate')
+                        ->label('Regenerate keys')
+                        ->icon('heroicon-o-key')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading(fn (ServiceUser $record) => "Regenerate keys for {$record->name}")
+                        ->modalDescription('Issues new key material and stops the current config working immediately -- what a lost or stolen device calls for. The user keeps their name, address, labels and history. They will need the new config.')
+                        ->modalSubmitActionLabel('Regenerate')
+                        ->visible(fn (ServiceUser $record) => $record->status !== ServiceUserStatus::Revoked)
+                        ->action(function (ServiceUser $record) {
+                            RotateUserKeys::dispatch($record);
+
+                            Notification::make()
+                                ->title('Regenerating keys')
+                                ->body('The old config stops working as soon as this finishes. Download the new one and re-import it on the device.')
+                                ->warning()
+                                ->send();
+                        }),
                     // Suspend and resume are the reversible pair; revoke below
                     // is the one-way door.
                     Action::make('suspend')

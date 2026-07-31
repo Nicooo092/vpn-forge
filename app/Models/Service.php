@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ServiceStatus;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
+use App\Models\Concerns\RecordsChanges;
 use App\Services\Vpn\DriverFactory;
 use App\Services\Vpn\VpnProtocolDriver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,6 +16,18 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 class Service extends Model
 {
     use HasFactory;
+    use RecordsChanges;
+
+    /**
+     * last_error is rewritten by the poller on every failed cycle, and
+     * server_public_key is generated once and never edited by anyone.
+     *
+     * @return list<string>
+     */
+    protected function auditIgnored(): array
+    {
+        return ['last_error'];
+    }
 
     protected $fillable = [
         'name',

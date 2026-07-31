@@ -76,6 +76,8 @@ class PollBaselineTest extends TestCase
 
             public function removeUser(Service $service, ServiceUser $user): void {}
 
+            public function rotateUserKeys(Service $service, ServiceUser $user): void {}
+
             public function buildClientConfig(Service $service, ServiceUser $user): ClientConfigFile
             {
                 return new ClientConfigFile('x.conf', '');
