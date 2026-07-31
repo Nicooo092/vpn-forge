@@ -60,8 +60,22 @@ class PollAllServiceStatuses implements ShouldQueue
                 continue; // Stale/unknown peer, e.g. right after removal.
             }
 
-            $deltaIn = max(0, $status->bytesIn - $user->last_cumulative_bytes_in);
-            $deltaOut = max(0, $status->bytesOut - $user->last_cumulative_bytes_out);
+            // Interface counters report traffic since the tunnel came up, not
+            // since this poller started watching it. A user we have never seen
+            // connected, whose counters are nonetheless already non-zero, moved
+            // that data while we had no visibility -- booking the whole backlog
+            // as one delta plants a spike worth hours of real traffic in a
+            // single bucket and flattens the rest of the bandwidth chart
+            // against the axis. Seed the baseline instead and start measuring
+            // from here. The cost is losing at most one poll interval of a
+            // brand new user's traffic.
+            $firstObservation = $user->last_handshake_at === null
+                && $user->last_cumulative_bytes_in === 0
+                && $user->last_cumulative_bytes_out === 0
+                && ($status->bytesIn > 0 || $status->bytesOut > 0);
+
+            $deltaIn = $firstObservation ? 0 : max(0, $status->bytesIn - $user->last_cumulative_bytes_in);
+            $deltaOut = $firstObservation ? 0 : max(0, $status->bytesOut - $user->last_cumulative_bytes_out);
 
             $openLog = $user->connectionLogs()->whereNull('disconnected_at')->latest('connected_at')->first();
 
