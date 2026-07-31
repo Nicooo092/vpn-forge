@@ -63,7 +63,18 @@ class ServiceForm
                     ->description('What this service is and where clients reach it.')
                     // Nothing to report on a service that does not exist yet,
                     // so on create this takes the whole row.
-                    ->columnSpan(fn (string $operation) => $operation === 'create' ? 3 : 2)
+                    //
+                    // Written as an array rather than a bare closure on
+                    // purpose: CanSpanColumns::columnSpan() expands a scalar
+                    // into ['default' => 1, 'lg' => $span], but appends a
+                    // Closure untouched and skips that expansion -- which
+                    // loses the `default: 1` and leaves the section claiming
+                    // two or three tracks inside the single-track grid every
+                    // viewport below 1024px actually gets.
+                    ->columnSpan([
+                        'default' => 1,
+                        'lg' => fn (string $operation) => $operation === 'create' ? 3 : 2,
+                    ])
                     ->columns(2)
                     ->schema([
                         TextInput::make('name')
@@ -352,6 +363,13 @@ class ServiceForm
                                 ->default(['1.1.1.1', '1.0.0.1'])
                                 ->dehydratedWhenHidden()
                                 ->helperText('Where this service\'s resolver forwards queries it cannot answer itself.')
+                                ->columnSpanFull(),
+
+                            TagsInput::make('config.blocked_domains')
+                                ->label('Blocked domains')
+                                ->placeholder('ads.example.com')
+                                ->dehydratedWhenHidden()
+                                ->helperText('Blocked for everyone on this service, subdomains included -- entering example.com also covers www.example.com. The lookup is refused by this service\'s own resolver, so it never reaches an upstream. A client using its own DNS server bypasses this entirely.')
                                 ->columnSpanFull(),
                         ]),
                 ]),
