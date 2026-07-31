@@ -3,10 +3,15 @@
 namespace App\Filament\Resources\Services\RelationManagers;
 
 use App\Enums\ServiceUserStatus;
+use App\Enums\VpnProtocol;
 use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\RemoveServiceUser;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
@@ -18,6 +23,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Throwable;
 
 class ServiceUsersRelationManager extends RelationManager
 {
@@ -114,6 +120,23 @@ class ServiceUsersRelationManager extends RelationManager
                             $file->filename,
                         );
                     }),
+                Action::make('qr')
+                    ->label('QR code')
+                    ->icon('heroicon-o-qr-code')
+                    // WireGuard only. An .ovpn embeds the CA, the client
+                    // certificate and its private key, which runs to several
+                    // kilobytes -- well past what a QR code can carry (~2.9 KB
+                    // at the absolute theoretical maximum, and much less while
+                    // staying scannable by a phone). A WireGuard config is
+                    // ~330 bytes.
+                    ->visible(fn (ServiceUser $record) => $record->service->protocol === VpnProtocol::WireGuard)
+                    ->modalHeading(fn (ServiceUser $record) => "Scan to import {$record->name}")
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->modalContent(fn (ServiceUser $record) => view(
+                        'filament.service-user-qr',
+                        $this->qrModalData($record),
+                    )),
                 Action::make('revoke')
                     ->label('Revoke')
                     ->icon('heroicon-o-no-symbol')
@@ -134,6 +157,52 @@ class ServiceUsersRelationManager extends RelationManager
                     ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Revoked),
             ])
             ->poll('5s');
+    }
+
+    /**
+     * @return array<string, ?string>
+     */
+    private function qrModalData(ServiceUser $record): array
+    {
+        // Same cached copy the download action reads -- the web process can't
+        // reach the key material itself, only the privileged worker can.
+        $file = $record->clientConfigFile();
+
+        if ($file === null) {
+            return [
+                'dataUri' => null,
+                'message' => 'The config is still being generated in the background -- close this and reopen it in a moment.',
+                'tunnelName' => $record->name,
+            ];
+        }
+
+        try {
+            $dataUri = $this->qrDataUri($file->contents);
+        } catch (Throwable) {
+            // Only reachable if a service config pushes the rendered file past
+            // QR capacity (a very long custom AllowedIPs list, say).
+            return [
+                'dataUri' => null,
+                'message' => 'This config is too large to fit in a QR code -- use "Download config" instead.',
+                'tunnelName' => $record->name,
+            ];
+        }
+
+        return [
+            'dataUri' => $dataUri,
+            'message' => null,
+            'tunnelName' => $record->name,
+        ];
+    }
+
+    private function qrDataUri(string $contents): string
+    {
+        $writer = new Writer(new ImageRenderer(
+            new RendererStyle(320),
+            new SvgImageBackEnd,
+        ));
+
+        return 'data:image/svg+xml;base64,'.base64_encode($writer->writeString($contents));
     }
 
     private function suggestNextTunnelIp(Service $service): string
