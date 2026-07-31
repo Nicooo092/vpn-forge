@@ -4,7 +4,10 @@ namespace App\Filament\Resources\Services\Pages;
 
 use App\Filament\Resources\Services\ServiceResource;
 use App\Jobs\Vpn\ApplyServiceConfig;
-use Filament\Actions\DeleteAction;
+use App\Jobs\Vpn\RemoveService;
+use App\Models\Service;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditService extends EditRecord
@@ -14,8 +17,51 @@ class EditService extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            DeleteAction::make(),
+            // Deliberately not DeleteAction: deleting the row on its own
+            // leaves the interface, NAT rules, systemd unit and dnsmasq
+            // instance running on the host with nothing left in the panel
+            // pointing at them. RemoveService tears all of that down first
+            // and deletes the record itself once it has, which is also what
+            // the services table does.
+            Action::make('remove')
+                ->label('Remove')
+                ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalDescription('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.')
+                ->action(function (Service $record) {
+                    RemoveService::dispatch($record);
+
+                    Notification::make()
+                        ->title('Removing service')
+                        ->body('Tearing down in the background.')
+                        ->success()
+                        ->send();
+
+                    return redirect(ServiceResource::getUrl('index'));
+                }),
         ];
+    }
+
+    /**
+     * config is a single JSON column, and the form binds one field per key it
+     * knows about -- so Filament rebuilds the whole array from those fields
+     * alone and silently drops anything else it holds. server_public_key is
+     * generated once at provisioning and embedded in every client config, so
+     * losing it on an unrelated edit (renaming the service, say) would leave
+     * every config the panel hands out afterwards with an empty peer key.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        $data['config'] = array_merge(
+            $this->record->config ?? [],
+            $data['config'] ?? [],
+        );
+
+        return $data;
     }
 
     protected function afterSave(): void

@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
 use App\Filament\Resources\Services\Pages\CreateService;
+use App\Filament\Resources\Services\Pages\EditService;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -106,6 +107,56 @@ class ServiceFormTest extends TestCase
         $this->assertSame('wg1', $service->interface_name);
         $this->assertSame('10.9.0.0/24', $service->subnet_cidr);
         $this->assertSame(51821, (int) $service->listen_port);
+    }
+
+    /**
+     * Editing in simple mode leaves most of the record's fields off screen.
+     * They must survive the save untouched -- silently resetting a tuned MTU
+     * or AllowedIPs to the form default would break live clients.
+     */
+    public function test_editing_in_simple_mode_preserves_hidden_settings(): void
+    {
+        $service = Service::create([
+            'name' => 'Tuned tunnel',
+            'interface_name' => 'wg3',
+            'subnet_cidr' => '10.44.0.0/24',
+            'listen_port' => 51999,
+            'protocol' => VpnProtocol::WireGuard,
+            'transport' => Transport::Udp,
+            'status' => ServiceStatus::Active,
+            'logging_enabled_default' => true,
+            'config' => [
+                'endpoint_host' => 'vpn.example.com',
+                'egress_interface' => 'ens5',
+                'mtu' => 1280,
+                'keepalive' => 15,
+                'dns' => ['10.44.0.1'],
+                'client_allowed_ips' => '10.44.0.0/24',
+                'server_public_key' => 'kept-as-is',
+            ],
+        ]);
+
+        Livewire::test(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertOk()
+            ->fillForm(['name' => 'Renamed tunnel'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $service->refresh();
+
+        $this->assertSame('Renamed tunnel', $service->name);
+        $this->assertSame('wg3', $service->interface_name);
+        $this->assertSame('10.44.0.0/24', $service->subnet_cidr);
+        $this->assertSame(51999, (int) $service->listen_port);
+        $this->assertSame(1280, (int) $service->config['mtu']);
+        $this->assertSame(15, (int) $service->config['keepalive']);
+        $this->assertSame(['10.44.0.1'], $service->config['dns']);
+        $this->assertSame('10.44.0.0/24', $service->config['client_allowed_ips']);
+        $this->assertSame('ens5', $service->config['egress_interface']);
+
+        // Generated at provisioning time and never shown in the form at all --
+        // losing it would orphan every existing client config.
+        $this->assertSame('kept-as-is', $service->config['server_public_key']);
     }
 
     public function test_advanced_mode_exposes_the_protocol_specific_fields(): void
