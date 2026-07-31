@@ -75,6 +75,19 @@ setup_privileged_worker() {
   chgrp vpnforge-worker /var/log/vpnforge
   chmod 2775 /var/log/vpnforge
 
+  # Backups are written by vpnforge-worker, the only account that can read the
+  # OpenVPN CA, and downloaded through the panel, which runs as www-data.
+  # Neither can see the other's files, so one small shared group carries this
+  # directory and nothing else. setgid so archives inherit it whoever writes
+  # them; 2770 because the contents are every private key on the machine.
+  output "Creating the shared backup directory..."
+  groupadd -f vpnforge-backup
+  usermod -aG vpnforge-backup vpnforge-worker
+  usermod -aG vpnforge-backup www-data
+  mkdir -p /var/backups/vpnforge
+  chown root:vpnforge-backup /var/backups/vpnforge
+  chmod 2770 /var/backups/vpnforge
+
   output "Granting vpnforge-worker permission to manage its systemd units..."
   # CAP_NET_ADMIN (below) covers wg/easyrsa/iptables, but systemctl
   # enable/disable/restart on wg-quick@, openvpn-server@ and

@@ -73,6 +73,7 @@ class OpenVpnDriver implements VpnProtocolDriver
     public function applyServiceConfig(Service $service): void
     {
         $this->writeServerConfig($service);
+        $this->syncClientConfigDir($service);
 
         // Unlike WireGuard, OpenVPN has no equivalent of `wg syncconf` for
         // server-level settings (cipher, keepalive, push routes, ...) --
@@ -344,6 +345,10 @@ class OpenVpnDriver implements VpnProtocolDriver
         $dir = $this->serviceDir($service);
         $config = $service->config ?? [];
 
+        // The config below names this directory, and OpenVPN refuses to start
+        // if it is missing -- so create it even when nobody is suspended.
+        File::ensureDirectoryExists($this->clientConfigDir($service), 0750);
+
         $dataCiphers = $config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305';
         $keepalive = $config['keepalive'] ?? '10 60';
         $authDigest = $config['auth_digest'] ?? 'SHA256';
@@ -383,6 +388,7 @@ class OpenVpnDriver implements VpnProtocolDriver
         dh none
         tls-crypt {$dir}/ta.key
         crl-verify {$dir}/crl.pem
+        client-config-dir {$dir}/ccd
         data-ciphers {$dataCiphers}
         data-ciphers-fallback AES-256-GCM
         auth {$authDigest}
@@ -416,6 +422,62 @@ class OpenVpnDriver implements VpnProtocolDriver
     private function networkAddress(Service $service): string
     {
         return explode('/', $service->subnet_cidr)[0];
+    }
+
+    /**
+     * A suspended user has to be blocked without destroying anything, so that
+     * turning them back on is a switch rather than issuing a new certificate.
+     * Revocation is the opposite -- it burns the serial permanently -- so it
+     * is reserved for actually removing someone.
+     *
+     * OpenVPN's client-config-dir does exactly this: a file named after the
+     * common name containing `disable` refuses that client at connection
+     * time, and deleting the file lets them straight back in. WireGuard needs
+     * no equivalent, since writeConfig() simply stops rendering a peer that
+     * is not Active.
+     */
+    private function syncClientConfigDir(Service $service): void
+    {
+        $ccdDir = $this->clientConfigDir($service);
+        File::ensureDirectoryExists($ccdDir, 0750);
+
+        foreach ($service->serviceUsers()->whereNotNull('openvpn_common_name')->get() as $user) {
+            $path = "{$ccdDir}/{$user->openvpn_common_name}";
+
+            if ($user->status === ServiceUserStatus::Suspended) {
+                File::put($path, "disable\n");
+
+                continue;
+            }
+
+            File::delete($path);
+        }
+
+        // Anyone already connected keeps their session until it renegotiates,
+        // so cut it now rather than leaving a suspended user online.
+        $this->disconnectSuspended($service);
+    }
+
+    private function disconnectSuspended(Service $service): void
+    {
+        $suspended = $service->serviceUsers()
+            ->where('status', ServiceUserStatus::Suspended)
+            ->whereNotNull('openvpn_common_name')
+            ->pluck('openvpn_common_name');
+
+        foreach ($suspended as $commonName) {
+            try {
+                $this->managementCommand($service, "kill {$commonName}");
+            } catch (RuntimeException) {
+                // The management socket is only there while the server is
+                // running; nothing to disconnect if it is not.
+            }
+        }
+    }
+
+    private function clientConfigDir(Service $service): string
+    {
+        return $this->serviceDir($service).'/ccd';
     }
 
     /**

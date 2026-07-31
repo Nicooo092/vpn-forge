@@ -25,13 +25,7 @@ class DnsmasqManager
         File::ensureDirectoryExists(self::CONFIG_DIR, 0755);
         File::ensureDirectoryExists(self::LOG_DIR, 0755);
 
-        $gatewayIp = $this->gatewayAddress($service);
         $logPath = $this->logPath($service);
-
-        $upstreams = collect($service->config['dns_upstreams'] ?? ['1.1.1.1', '1.0.0.1'])
-            ->filter()
-            ->map(fn (string $server) => "server={$server}")
-            ->implode("\n");
 
         // Truncate rather than append across re-provisions, so a
         // re-applied service doesn't inherit a stale log file with the
@@ -40,21 +34,7 @@ class DnsmasqManager
             File::put($logPath, '');
         }
 
-        $contents = <<<CONF
-        interface={$service->interface_name}
-        bind-interfaces
-        except-interface=lo
-        listen-address={$gatewayIp}
-        no-dhcp-interface={$service->interface_name}
-        no-resolv
-        no-hosts
-        {$upstreams}
-        log-queries=extra
-        log-facility={$logPath}
-
-        CONF;
-
-        File::put($this->configPath($service), $contents);
+        File::put($this->configPath($service), $this->buildConfig($service));
 
         $unit = "vpnforge-dnsmasq@{$service->interface_name}";
         Process::run(['systemctl', 'enable', '--now', $unit])->throw();
@@ -66,6 +46,47 @@ class DnsmasqManager
         $unit = "vpnforge-dnsmasq@{$service->interface_name}";
         Process::run(['systemctl', 'disable', '--now', $unit])->run();
         File::delete($this->configPath($service));
+    }
+
+    /**
+     * Kept separate from provision() so the generated directives can be
+     * asserted on without writing to /etc or restarting a unit.
+     */
+    public function buildConfig(Service $service): string
+    {
+        $gatewayIp = $this->gatewayAddress($service);
+        $logPath = $this->logPath($service);
+
+        $upstreams = collect($service->config['dns_upstreams'] ?? ['1.1.1.1', '1.0.0.1'])
+            ->filter()
+            ->map(fn (string $server) => "server={$server}")
+            ->implode("\n");
+
+        // address=/example.com/ with no address answers NXDOMAIN for the name
+        // and everything under it, so one entry covers the subdomains a site
+        // actually loads from. It is answered locally, which also means a
+        // blocked lookup never reaches the upstream resolver at all.
+        $blocked = collect($service->config['blocked_domains'] ?? [])
+            ->map(fn (string $domain) => trim($domain, " \t\n\r\0\x0B."))
+            ->filter()
+            ->unique()
+            ->map(fn (string $domain) => "address=/{$domain}/")
+            ->implode("\n");
+
+        return <<<CONF
+        interface={$service->interface_name}
+        bind-interfaces
+        except-interface=lo
+        listen-address={$gatewayIp}
+        no-dhcp-interface={$service->interface_name}
+        no-resolv
+        no-hosts
+        {$upstreams}
+        {$blocked}
+        log-queries=extra
+        log-facility={$logPath}
+
+        CONF;
     }
 
     public function configPath(Service $service): string

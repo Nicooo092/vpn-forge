@@ -7,10 +7,12 @@ use App\Enums\VpnProtocol;
 use App\Jobs\Vpn\ProvisionService;
 use App\Jobs\Vpn\RemoveService;
 use App\Models\Service;
+use App\Services\Vpn\ConnectivityCheck;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -71,6 +73,18 @@ class ServicesTable
             ->recordActions([
                 ActionGroup::make([
                     EditAction::make(),
+                    Action::make('test')
+                        ->label('Test connection')
+                        ->icon('heroicon-o-signal')
+                        ->modalHeading(fn (Service $record) => "Diagnostics for {$record->name}")
+                        ->modalWidth(Width::TwoExtraLarge)
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Close')
+                        ->modalContent(fn (Service $record) => view('filament.connectivity-check', [
+                            'checks' => app(ConnectivityCheck::class)->run($record),
+                            'port' => $record->listen_port,
+                            'transport' => $record->transport->value,
+                        ])),
                     // Recovering a service stuck in Error used to mean SSHing
                     // in and re-dispatching the job by hand. provisionService()
                     // skips interface creation when the config file already

@@ -5,6 +5,7 @@ namespace App\Jobs\Vpn;
 use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
+use App\Services\Vpn\DnsmasqManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -22,10 +23,16 @@ class ApplyServiceConfig implements ShouldQueue
         $this->onQueue('system');
     }
 
-    public function handle(): void
+    public function handle(DnsmasqManager $dnsmasq): void
     {
         try {
             $this->service->driver()->applyServiceConfig($this->service);
+
+            // The resolver's own settings -- upstream servers, blocked
+            // domains -- live in the service config too, and nothing here
+            // used to re-render them, so editing either changed the stored
+            // value and nothing else until the service was re-provisioned.
+            $dnsmasq->provision($this->service);
 
             $this->service->forceFill([
                 'status' => ServiceStatus::Active,

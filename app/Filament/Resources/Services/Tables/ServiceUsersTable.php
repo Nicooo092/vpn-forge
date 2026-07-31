@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Services\Tables;
 
 use App\Enums\ServiceUserStatus;
 use App\Enums\VpnProtocol;
+use App\Filament\Resources\ServiceUsers\ServiceUserResource;
 use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Jobs\Vpn\RemoveServiceUser;
@@ -21,6 +22,7 @@ use Filament\Notifications\Notification;
 use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Throwable;
 
@@ -32,12 +34,38 @@ class ServiceUsersTable
             ->recordTitleAttribute('name')
             ->columns([
                 TextColumn::make('name')
-                    ->searchable(),
+                    ->searchable()
+                    ->weight('bold')
+                    ->url(fn (ServiceUser $record) => ServiceUserResource::getUrl('view', ['record' => $record])),
                 TextColumn::make('tunnel_ip')
                     ->label('Tunnel IP')
                     ->fontFamily('mono'),
                 TextColumn::make('status')
-                    ->badge(),
+                    ->badge()
+                    ->description(fn (ServiceUser $record) => $record->suspended_reason),
+                TextColumn::make('labels')
+                    ->badge()
+                    ->separator(',')
+                    ->placeholder('--')
+                    ->toggleable(),
+                TextColumn::make('expires_at')
+                    ->label('Expires')
+                    ->since()
+                    ->placeholder('never')
+                    ->tooltip(fn (ServiceUser $record) => $record->expires_at?->toDayDateTimeString())
+                    ->color(fn (ServiceUser $record) => $record->isExpired() ? 'danger' : null)
+                    ->toggleable(),
+                TextColumn::make('data_limit_bytes')
+                    ->label('Allowance')
+                    ->state(fn (ServiceUser $record) => $record->data_limit_bytes === null
+                        ? null
+                        : self::formatBytes($record->dataUsedBytes()).' of '.self::formatBytes($record->data_limit_bytes))
+                    ->description(fn (ServiceUser $record) => $record->dataUsageRatio() === null
+                        ? null
+                        : round($record->dataUsageRatio() * 100).'% used')
+                    ->color(fn (ServiceUser $record) => $record->isOverDataLimit() ? 'danger' : null)
+                    ->placeholder('unlimited')
+                    ->toggleable(),
                 IconColumn::make('logging_override')
                     ->label('Logging')
                     ->boolean()
@@ -177,6 +205,62 @@ class ServiceUsersTable
                             'filament.service-user-qr',
                             self::qrModalData($record),
                         )),
+                    // Suspend and resume are the reversible pair; revoke below
+                    // is the one-way door.
+                    Action::make('suspend')
+                        ->label('Suspend')
+                        ->icon('heroicon-o-pause')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalDescription('Blocks this user without destroying their keys. You can turn them back on at any time.')
+                        ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
+                        ->action(function (ServiceUser $record) {
+                            $record->forceFill([
+                                'status' => ServiceUserStatus::Suspended,
+                                'suspended_reason' => 'suspended by hand',
+                            ])->save();
+
+                            ApplyServiceConfig::dispatch($record->service);
+
+                            Notification::make()->title('User suspended')->success()->send();
+                        }),
+                    Action::make('resume')
+                        ->label('Resume')
+                        ->icon('heroicon-o-play')
+                        ->color('success')
+                        ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Suspended)
+                        ->action(function (ServiceUser $record) {
+                            // Refuse rather than let them straight back in to
+                            // be suspended again by the next enforcement run.
+                            if ($record->isExpired()) {
+                                Notification::make()
+                                    ->title('Expiry date has passed')
+                                    ->body('Push the expiry date back first, or clear it.')
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
+                            if ($record->isOverDataLimit()) {
+                                Notification::make()
+                                    ->title('Allowance is still used up')
+                                    ->body('Raise the allowance or move its start date forward first.')
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
+                            $record->forceFill([
+                                'status' => ServiceUserStatus::Active,
+                                'suspended_reason' => null,
+                            ])->save();
+
+                            ApplyServiceConfig::dispatch($record->service);
+
+                            Notification::make()->title('User resumed')->success()->send();
+                        }),
                     Action::make('revoke')
                         ->label('Revoke')
                         ->icon('heroicon-o-no-symbol')
@@ -196,6 +280,24 @@ class ServiceUsersTable
                     DeleteAction::make()
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Revoked),
                 ]),
+            ])
+            ->filters([
+                SelectFilter::make('status')->options(ServiceUserStatus::class),
+                SelectFilter::make('labels')
+                    ->label('Label')
+                    // labels is a json array, so match the quoted value inside
+                    // it rather than comparing the column.
+                    ->options(fn () => ServiceUser::query()
+                        ->whereNotNull('labels')
+                        ->pluck('labels')
+                        ->flatten()
+                        ->unique()
+                        ->sort()
+                        ->mapWithKeys(fn (string $label) => [$label => $label])
+                        ->all())
+                    ->query(fn ($query, array $data) => filled($data['value'] ?? null)
+                        ? $query->whereJsonContains('labels', $data['value'])
+                        : $query),
             ])
             ->emptyStateIcon('heroicon-o-users')
             ->emptyStateHeading('No users yet')
