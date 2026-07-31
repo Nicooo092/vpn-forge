@@ -75,18 +75,29 @@ setup_privileged_worker() {
   chgrp vpnforge-worker /var/log/vpnforge
   chmod 2775 /var/log/vpnforge
 
-  # Backups are written by vpnforge-worker, the only account that can read the
-  # OpenVPN CA, and downloaded through the panel, which runs as www-data.
-  # Neither can see the other's files, so one small shared group carries this
-  # directory and nothing else. setgid so archives inherit it whoever writes
-  # them; 2770 because the contents are every private key on the machine.
-  output "Creating the shared backup directory..."
-  groupadd -f vpnforge-backup
-  usermod -aG vpnforge-backup vpnforge-worker
-  usermod -aG vpnforge-backup www-data
+  # www-data and vpnforge-worker cannot see each other's files, which is the
+  # point -- but two directories genuinely belong to both of them, so one
+  # shared group carries exactly those and nothing else.
+  output "Creating the shared group for the panel and the worker..."
+  groupadd -f vpnforge-shared
+  usermod -aG vpnforge-shared vpnforge-worker
+  usermod -aG vpnforge-shared www-data
+
+  # Backups: written by the worker (the only account that can read the
+  # OpenVPN CA), downloaded through the panel. 2770 because the contents are
+  # every private key on the machine, setgid so archives inherit the group
+  # whichever account writes them.
   mkdir -p /var/backups/vpnforge
-  chown root:vpnforge-backup /var/backups/vpnforge
+  chown root:vpnforge-shared /var/backups/vpnforge
   chmod 2770 /var/backups/vpnforge
+
+  # Laravel's log: both processes write it. Without this the worker cannot
+  # open it, and because Monolog throws when it cannot log, a single failed
+  # job takes the whole worker down with it rather than being recorded.
+  mkdir -p "${APP_DIR}/storage/logs"
+  chgrp -R vpnforge-shared "${APP_DIR}/storage/logs"
+  chmod 2775 "${APP_DIR}/storage/logs"
+  find "${APP_DIR}/storage/logs" -type f -exec chmod 664 {} +
 
   output "Granting vpnforge-worker permission to manage its systemd units..."
   # CAP_NET_ADMIN (below) covers wg/easyrsa/iptables, but systemctl

@@ -44,12 +44,21 @@ class BackupArchive
 
         $zip->addFromString('database.sql', $this->databaseDump());
 
+        $skipped = [];
+
         foreach (self::PATHS as $source) {
-            $this->addDirectory($zip, $source);
+            $skipped = [...$skipped, ...$this->addDirectory($zip, $source)];
         }
 
-        $zip->addFromString('README.txt', $this->readme());
-        $zip->close();
+        $zip->addFromString('README.txt', $this->readme($skipped));
+
+        // ZipArchive only reads the files it was handed when the archive is
+        // closed, so an unreadable one fails here rather than at addFile()
+        // -- which is why a single 640 file owned by another account used to
+        // take the whole backup down with a message naming none of them.
+        if (! $zip->close()) {
+            throw new RuntimeException('Could not write the archive: '.$zip->getStatusString());
+        }
 
         // Group-readable so the web process can serve it; the directory is
         // setgid to a group both accounts belong to. Never world-readable --
@@ -79,13 +88,17 @@ class BackupArchive
         return $result->output();
     }
 
-    private function addDirectory(ZipArchive $zip, string $source): void
+    /**
+     * @return list<string> paths deliberately left out, to be reported
+     */
+    private function addDirectory(ZipArchive $zip, string $source): array
     {
         if (! File::isDirectory($source)) {
-            return; // A service of that protocol was never provisioned.
+            return []; // A service of that protocol was never provisioned.
         }
 
         $prefix = ltrim($source, '/');
+        $skipped = [];
 
         foreach (File::allFiles($source, hidden: true) as $file) {
             // Sockets and other non-regular files under these directories
@@ -94,11 +107,35 @@ class BackupArchive
                 continue;
             }
 
+            // The agent's config belongs to the capture agent's own account
+            // and is unreadable here by design. Skip what cannot be read and
+            // say so, rather than failing the entire backup over it.
+            if (! is_readable($file->getPathname())) {
+                $skipped[] = $file->getPathname();
+
+                continue;
+            }
+
             $zip->addFile($file->getPathname(), $prefix.'/'.$file->getRelativePathname());
         }
+
+        return $skipped;
     }
 
-    private function readme(): string
+    /**
+     * @param  list<string>  $skipped
+     */
+    private function readme(array $skipped): string
+    {
+        $omitted = $skipped === []
+            ? ''
+            : "\n\nNot included, because the backup process cannot read them:\n  ".implode("\n  ", $skipped)
+                ."\nCopy these by hand as root if you need them.\n";
+
+        return $this->readmeBody().$omitted;
+    }
+
+    private function readmeBody(): string
     {
         return <<<'TXT'
         vpn-forge backup
