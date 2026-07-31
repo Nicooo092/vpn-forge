@@ -20,6 +20,11 @@ class DnsmasqManager
 
     private const LOG_DIR = '/var/log/vpnforge';
 
+    /**
+     * @var list<string>
+     */
+    public const DEFAULT_UPSTREAMS = ['1.1.1.1', '1.0.0.1'];
+
     public function provision(Service $service): void
     {
         File::ensureDirectoryExists(self::CONFIG_DIR, 0755);
@@ -57,8 +62,22 @@ class DnsmasqManager
         $gatewayIp = $this->gatewayAddress($service);
         $logPath = $this->logPath($service);
 
-        $upstreams = collect($service->config['dns_upstreams'] ?? ['1.1.1.1', '1.0.0.1'])
+        // `?? default` does not catch an empty array, and the form stores one
+        // whenever the tag field is cleared or was never filled in. Combined
+        // with no-resolv below, zero server= lines leaves dnsmasq with no
+        // upstream at all: it answers every lookup with a failure and the
+        // tunnel stops resolving anything, which looks exactly like the VPN
+        // being down. Anything falsy here falls back to the defaults.
+        $upstreams = collect($service->config['dns_upstreams'] ?? [])
+            ->map(fn ($server) => trim((string) $server))
             ->filter()
+            ->values();
+
+        if ($upstreams->isEmpty()) {
+            $upstreams = collect(self::DEFAULT_UPSTREAMS);
+        }
+
+        $upstreams = $upstreams
             ->map(fn (string $server) => "server={$server}")
             ->implode("\n");
 

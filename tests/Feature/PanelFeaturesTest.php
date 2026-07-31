@@ -15,6 +15,7 @@ use App\Models\ServiceUser;
 use App\Models\User;
 use App\Services\Vpn\ConnectivityCheck;
 use App\Services\Vpn\DnsmasqManager;
+use App\Services\Vpn\WireGuard\WireGuardDriver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
@@ -109,6 +110,66 @@ class PanelFeaturesTest extends TestCase
         // The resolver still has to answer on the tunnel gateway, or blocking
         // a domain would be the least of the problems.
         $this->assertStringContainsString('listen-address=10.0.0.1', $config);
+    }
+
+    /**
+     * Clearing the upstream tag field stores [], which `?? default` does not
+     * catch. With no-resolv and no server= line, dnsmasq answers every lookup
+     * with a failure -- the tunnel stays up and nothing resolves, which is
+     * indistinguishable from the VPN being down. This took the live server
+     * off the air once; it must not again.
+     */
+    public function test_an_empty_upstream_list_falls_back_rather_than_leaving_no_resolver(): void
+    {
+        $this->service->update([
+            'config' => array_merge($this->service->config, ['dns_upstreams' => []]),
+        ]);
+
+        $config = app(DnsmasqManager::class)->buildConfig($this->service->fresh());
+
+        $this->assertStringContainsString('server=1.1.1.1', $config);
+        $this->assertStringContainsString('no-resolv', $config);
+    }
+
+    public function test_blank_entries_in_the_upstream_list_are_ignored(): void
+    {
+        $this->service->update([
+            'config' => array_merge($this->service->config, ['dns_upstreams' => ['', '  ', '9.9.9.9']]),
+        ]);
+
+        $config = app(DnsmasqManager::class)->buildConfig($this->service->fresh());
+
+        $this->assertStringContainsString('server=9.9.9.9', $config);
+        $this->assertStringNotContainsString("server=\n", $config);
+        $this->assertStringNotContainsString('server= ', $config);
+    }
+
+    public function test_a_client_config_never_ships_an_empty_dns_line(): void
+    {
+        $this->service->update([
+            'config' => array_merge($this->service->config, [
+                'push_dns' => false,
+                'dns' => [],
+                'server_public_key' => 'server-key',
+            ]),
+        ]);
+
+        $user = ServiceUser::create([
+            'service_id' => $this->service->id,
+            'name' => 'phone',
+            'status' => ServiceUserStatus::Active,
+            'tunnel_ip' => '10.0.0.2',
+            'wg_private_key' => 'k',
+            'wg_public_key' => 'k',
+            'wg_preshared_key' => 'k',
+        ]);
+
+        $contents = (new WireGuardDriver)
+            ->buildClientConfig($this->service->fresh(), $user)
+            ->contents;
+
+        $this->assertStringNotContainsString("DNS = \n", $contents);
+        $this->assertStringContainsString('DNS = 1.1.1.1, 1.0.0.1', $contents);
     }
 
     public function test_a_service_with_no_blocklist_produces_no_address_directives(): void

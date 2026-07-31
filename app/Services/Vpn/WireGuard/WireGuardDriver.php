@@ -7,6 +7,7 @@ use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Vpn\ClientConfigFile;
+use App\Services\Vpn\DnsmasqManager;
 use App\Services\Vpn\PeerStatus;
 use App\Services\Vpn\VpnProtocolDriver;
 use Carbon\CarbonImmutable;
@@ -123,9 +124,17 @@ class WireGuardDriver implements VpnProtocolDriver
         // queries through it is the entire basis of DNS traffic logging. With
         // a public resolver here the client never talks to dnsmasq at all and
         // the capture agent sees nothing, which is exactly how this shipped.
+        // Same trap as the resolver's upstream list: an empty array is not
+        // caught by `?? default`, and rendering `DNS = ` with nothing after
+        // it leaves the client with no resolver at all.
+        $customDns = collect($config['dns'] ?? [])
+            ->map(fn ($server) => trim((string) $server))
+            ->filter()
+            ->values();
+
         $dns = ($config['push_dns'] ?? true)
             ? $this->gatewayAddress($service)
-            : implode(', ', $config['dns'] ?? ['1.1.1.1', '1.0.0.1']);
+            : implode(', ', $customDns->isEmpty() ? DnsmasqManager::DEFAULT_UPSTREAMS : $customDns->all());
 
         $mtu = $config['mtu'] ?? 1420;
         $allowedIps = $config['client_allowed_ips'] ?? '0.0.0.0/0, ::/0';
