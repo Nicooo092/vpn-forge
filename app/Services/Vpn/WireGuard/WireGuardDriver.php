@@ -115,7 +115,18 @@ class WireGuardDriver implements VpnProtocolDriver
     public function buildClientConfig(Service $service, ServiceUser $user): ClientConfigFile
     {
         $config = $service->config ?? [];
-        $dns = implode(', ', $config['dns'] ?? ['1.1.1.1', '1.0.0.1']);
+
+        // Point the client at this service's own dnsmasq instance (the .1 of
+        // the tunnel subnet) rather than straight at a public resolver.
+        // dnsmasq is provisioned for every service and forwards on to the
+        // configured upstreams, so resolution is unchanged -- but sending the
+        // queries through it is the entire basis of DNS traffic logging. With
+        // a public resolver here the client never talks to dnsmasq at all and
+        // the capture agent sees nothing, which is exactly how this shipped.
+        $dns = ($config['push_dns'] ?? true)
+            ? $this->gatewayAddress($service)
+            : implode(', ', $config['dns'] ?? ['1.1.1.1', '1.0.0.1']);
+
         $mtu = $config['mtu'] ?? 1420;
         $allowedIps = $config['client_allowed_ips'] ?? '0.0.0.0/0, ::/0';
         $keepalive = $config['keepalive'] ?? 25;

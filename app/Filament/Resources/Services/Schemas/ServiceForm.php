@@ -184,10 +184,11 @@ class ServiceForm
                                 ->helperText('Keeps NAT mappings alive for clients behind a router. 0 disables it.'),
 
                             TagsInput::make('config.dns')
-                                ->label('DNS servers pushed to clients')
+                                ->label('Custom DNS servers for clients')
                                 ->default(['1.1.1.1', '1.0.0.1'])
                                 ->dehydratedWhenHidden()
-                                ->helperText('Set this to the tunnel gateway (the .1 of the subnet) if you want DNS-based traffic logging to see this service\'s queries.'),
+                                ->visible(fn (Get $get) => $get('config.push_dns') === false)
+                                ->helperText('Only used when clients are not pointed at this service\'s own resolver.'),
 
                             TextInput::make('config.client_allowed_ips')
                                 ->label('Client AllowedIPs')
@@ -285,9 +286,9 @@ class ServiceForm
                             Toggle::make('config.push_dns')
                                 ->label('Point clients at this service\'s own DNS resolver')
                                 ->default(true)
+                                ->live()
                                 ->dehydratedWhenHidden()
-                                ->visible(fn (Get $get) => self::protocolFrom($get('protocol')) === VpnProtocol::OpenVpn)
-                                ->helperText('Required for DNS-based traffic logging on OpenVPN -- without it clients keep using their own resolver and the capture agent sees nothing.')
+                                ->helperText('Required for DNS traffic logging: queries have to pass through this service\'s resolver for the capture agent to see them. It forwards on to the upstreams below, so name resolution is unaffected. Turning this off leaves the Traffic logs tab permanently empty.')
                                 ->columnSpanFull(),
 
                             TagsInput::make('config.dns_upstreams')
