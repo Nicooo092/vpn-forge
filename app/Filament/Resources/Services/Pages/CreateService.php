@@ -1,0 +1,17 @@
+<?php
+
+namespace App\Filament\Resources\Services\Pages;
+
+use App\Filament\Resources\Services\ServiceResource;
+use App\Jobs\Vpn\ProvisionService;
+use Filament\Resources\Pages\CreateRecord;
+
+class CreateService extends CreateRecord
+{
+    protected static string $resource = ServiceResource::class;
+
+    protected function afterCreate(): void
+    {
+        ProvisionService::dispatch($this->record);
+    }
+}
