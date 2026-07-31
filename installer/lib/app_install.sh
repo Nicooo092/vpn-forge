@@ -21,6 +21,12 @@ install_app() {
   [ -f .env ] || cp .env.example .env
   php artisan key:generate --force -n
 
+  # .env.example ships Laravel's development defaults, and nothing here used
+  # to override them -- so a public install ran with APP_DEBUG=true, printing
+  # a full stack trace (paths, environment, frequently the database password)
+  # to anyone able to trigger an error.
+  ensure_env_key .env APP_ENV production
+  ensure_env_key .env APP_DEBUG false
   ensure_env_key .env APP_URL "${SCHEME}://${APP_HOST}"
   ensure_env_key .env APP_TIMEZONE "${TIMEZONE}"
   ensure_env_key .env DB_CONNECTION mariadb
