@@ -5,11 +5,13 @@ namespace App\Filament\Resources\Services\Schemas;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
 use App\Models\Service;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -43,47 +45,94 @@ class ServiceForm
                 ->helperText('Simple picks the network details for you. Advanced exposes every parameter the drivers actually read.')
                 ->columnSpanFull(),
 
-            Section::make('Service')
-                ->description('What this service is and where clients reach it.')
-                ->columns(2)
-                ->schema([
-                    TextInput::make('name')
-                        ->required()
-                        ->maxLength(255)
-                        ->placeholder('Home tunnel'),
+            // Split the row: what you edit on the left, what the service
+            // actually is on the right. Previously the editable section took
+            // one column of a two-column grid and nothing filled the other,
+            // so the page was half empty while the runtime details it could
+            // have shown were not visible anywhere at all.
+            Grid::make(3)->schema([
+                Section::make('Service')
+                    ->description('What this service is and where clients reach it.')
+                    // Nothing to report on a service that does not exist yet,
+                    // so on create this takes the whole row.
+                    ->columnSpan(fn (string $operation) => $operation === 'create' ? 3 : 2)
+                    ->columns(2)
+                    ->schema([
+                        TextInput::make('name')
+                            ->required()
+                            ->maxLength(255)
+                            ->placeholder('Home tunnel'),
 
-                    Select::make('protocol')
-                        ->options(VpnProtocol::class)
-                        ->required()
-                        ->live()
-                        ->default(VpnProtocol::WireGuard)
-                        ->disabledOn('edit')
-                        ->helperText('Cannot be changed after creation.')
+                        Select::make('protocol')
+                            ->options(VpnProtocol::class)
+                            ->required()
+                            ->live()
+                            ->default(VpnProtocol::WireGuard)
+                            ->disabledOn('edit')
+                            ->helperText('Cannot be changed after creation.')
                         // Re-derive the network defaults whenever the protocol
                         // changes, so simple mode never leaves a WireGuard
                         // interface name on an OpenVPN service (or a port that
                         // belongs to the other protocol).
-                        ->afterStateUpdated(function (Set $set, $state): void {
-                            $protocol = $state instanceof VpnProtocol
-                                ? $state
-                                : VpnProtocol::tryFrom((string) $state);
+                            ->afterStateUpdated(function (Set $set, $state): void {
+                                $protocol = $state instanceof VpnProtocol
+                                    ? $state
+                                    : VpnProtocol::tryFrom((string) $state);
 
-                            if ($protocol === null) {
-                                return;
-                            }
+                                if ($protocol === null) {
+                                    return;
+                                }
 
-                            $set('interface_name', self::suggestInterfaceName($protocol));
-                            $set('listen_port', self::suggestListenPort($protocol));
-                            $set('transport', Transport::Udp->value);
-                        }),
+                                $set('interface_name', self::suggestInterfaceName($protocol));
+                                $set('listen_port', self::suggestListenPort($protocol));
+                                $set('transport', Transport::Udp->value);
+                            }),
 
-                    TextInput::make('config.endpoint_host')
-                        ->label('Public endpoint (hostname or IP)')
-                        ->required()
-                        ->default(fn () => self::detectPublicHost())
-                        ->helperText('What clients connect to -- this server\'s public IP or a domain pointing at it.')
-                        ->columnSpanFull(),
-                ]),
+                        TextInput::make('config.endpoint_host')
+                            ->label('Public endpoint (hostname or IP)')
+                            ->required()
+                            ->default(fn () => self::detectPublicHost())
+                            ->helperText('What clients connect to -- this server\'s public IP or a domain pointing at it.')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Provisioned state')
+                    ->description('Set when the service was created. Read-only here.')
+                    ->columnSpan(1)
+                    ->visibleOn('edit')
+                    ->schema([
+                        Placeholder::make('status_summary')
+                            ->label('Status')
+                            ->content(fn (?Service $record) => $record === null
+                                ? '--'
+                                : $record->status->getLabel().($record->last_error !== null ? ' -- '.$record->last_error : '')),
+
+                        Placeholder::make('interface_summary')
+                            ->label('Interface')
+                            ->content(fn (?Service $record) => $record?->interface_name ?? '--'),
+
+                        Placeholder::make('network_summary')
+                            ->label('Network')
+                            ->content(fn (?Service $record) => $record === null
+                                ? '--'
+                                : $record->subnet_cidr.' on port '.$record->listen_port.'/'.$record->transport->value),
+
+                        // The address clients are pointed at for DNS, and so
+                        // the one that has to be reachable for traffic logging
+                        // to see anything.
+                        Placeholder::make('resolver_summary')
+                            ->label('Tunnel gateway / resolver')
+                            ->content(fn (?Service $record) => $record === null
+                                ? '--'
+                                : self::gatewayAddress($record->subnet_cidr)),
+
+                        Placeholder::make('users_summary')
+                            ->label('Users')
+                            ->content(fn (?Service $record) => $record === null
+                                ? '--'
+                                : $record->serviceUsers()->count().' configured'),
+                    ]),
+            ]),
 
             // Everything below is advanced-only.
             //
@@ -300,6 +349,19 @@ class ServiceForm
                         ]),
                 ]),
         ]);
+    }
+
+    /**
+     * The .1 of the subnet: the tunnel's own address, which is both the
+     * gateway clients route through and where this service's DNS resolver
+     * listens. Mirrors DnsmasqManager's own calculation.
+     */
+    private static function gatewayAddress(string $subnetCidr): string
+    {
+        $parts = explode('.', explode('/', $subnetCidr)[0]);
+        $parts[3] = '1';
+
+        return implode('.', $parts);
     }
 
     private static function protocolFrom(mixed $state): ?VpnProtocol

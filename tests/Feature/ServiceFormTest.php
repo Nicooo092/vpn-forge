@@ -159,6 +159,34 @@ class ServiceFormTest extends TestCase
         $this->assertSame('kept-as-is', $service->config['server_public_key']);
     }
 
+    /**
+     * The edit page used to show only the handful of editable fields, with
+     * everything the service actually is -- interface, subnet, the resolver
+     * address clients depend on -- visible nowhere on the page.
+     */
+    public function test_the_edit_page_reports_the_provisioned_state(): void
+    {
+        $service = Service::create([
+            'name' => 'Reported tunnel',
+            'interface_name' => 'wg7',
+            'subnet_cidr' => '10.44.0.0/24',
+            'listen_port' => 51830,
+            'protocol' => VpnProtocol::WireGuard,
+            'transport' => Transport::Udp,
+            'status' => ServiceStatus::Active,
+            'logging_enabled_default' => true,
+            'config' => ['endpoint_host' => 'vpn.example.com'],
+        ]);
+
+        Livewire::test(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertOk()
+            ->assertSee('wg7')
+            ->assertSee('10.44.0.0/24')
+            // The .1 is where dnsmasq listens, so it is what clients must be
+            // able to reach for any traffic logging to happen.
+            ->assertSee('10.44.0.1');
+    }
+
     public function test_advanced_mode_exposes_the_protocol_specific_fields(): void
     {
         Livewire::test(CreateService::class)
