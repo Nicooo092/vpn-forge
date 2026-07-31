@@ -16,9 +16,13 @@ setup_capture_agent() {
     useradd --system --no-create-home --shell /usr/sbin/nologin vpnforge-agent
   fi
 
+  # Ownership and mode of /var/log/vpnforge belong to
+  # setup_privileged_worker(), which runs before this and leaves it
+  # root:vpnforge-worker 2775 so the worker can create the DNS log files.
+  # Do not chgrp it to vpnforge-agent here: the agent only needs to traverse
+  # this directory, and each log file is granted to it individually (640,
+  # group vpnforge-agent) by the dnsmasq unit's ExecStartPost.
   mkdir -p /etc/vpnforge /var/log/vpnforge
-  chgrp vpnforge-agent /var/log/vpnforge
-  chmod 755 /var/log/vpnforge
 
   output "Writing the agent's config file..."
   cat >/etc/vpnforge/agent.yml <<EOF

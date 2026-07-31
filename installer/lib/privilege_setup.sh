@@ -56,17 +56,24 @@ setup_privileged_worker() {
   chmod 770 /etc/vpnforge/dnsmasq
   chmod g+s /etc/vpnforge/dnsmasq
 
-  # /var/log/vpnforge: DnsmasqManager (running as vpnforge-worker) creates/
-  # truncates each service's DNS log file here before dnsmasq itself ever
-  # starts -- but vpnforge-agent also has to traverse this same directory
-  # to open those same files for tailing (each individual file is already
-  # its own 640 vpnforge-agent, via the dnsmasq unit's ExecStartPost, so
-  # content access is still gated per-file). Same reasoning as /etc/vpnforge
-  # above: 755, not 770 -- group vpnforge-worker keeps write access, and
-  # "other" gets enough (read+traverse, no write) for vpnforge-agent to
-  # reach the individual files, which is all it needs.
+  # /var/log/vpnforge: DnsmasqManager (running as vpnforge-worker) creates
+  # each service's DNS log file here before dnsmasq itself ever starts, so
+  # the worker needs *write* on this directory -- that means group write,
+  # i.e. 775 and not 755. vpnforge-agent only has to traverse the directory
+  # to open those files for tailing; each individual file is separately
+  # chgrp'd to vpnforge-agent and chmod 640 by the dnsmasq unit's
+  # ExecStartPost, so content access stays gated per-file and "other" needs
+  # nothing beyond r-x here. setgid keeps the group on anything created,
+  # whoever creates it.
+  #
+  # setup_capture_agent() runs after this one and must NOT chgrp this
+  # directory to vpnforge-agent: that silently takes the worker's write bit
+  # away, provisioning then dies on "Failed to open stream: Permission
+  # denied", the service is left status=error, and because
+  # PollAllServiceStatuses only polls Active services the panel shows no
+  # telemetry at all.
   chgrp vpnforge-worker /var/log/vpnforge
-  chmod 755 /var/log/vpnforge
+  chmod 2775 /var/log/vpnforge
 
   output "Granting vpnforge-worker permission to manage its systemd units..."
   # CAP_NET_ADMIN (below) covers wg/easyrsa/iptables, but systemctl
