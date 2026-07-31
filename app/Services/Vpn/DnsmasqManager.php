@@ -38,6 +38,7 @@ class DnsmasqManager
         $contents = <<<CONF
         interface={$service->interface_name}
         bind-interfaces
+        except-interface=lo
         listen-address={$gatewayIp}
         no-dhcp-interface={$service->interface_name}
         no-resolv

@@ -1,0 +1,17 @@
+// vpnforge-worker runs its per-service VPN commands (wg, easyrsa,
+// iptables) via a Linux capability (CAP_NET_ADMIN, ambient), but enabling,
+// starting, restarting or disabling the systemd units around those (wg-
+// quick@, openvpn-server@, vpnforge-dnsmasq@) goes through systemd's D-Bus
+// API instead, which is gated by polkit rather than by capabilities --
+// without this rule polkit falls back to requiring interactive
+// authentication, which a non-interactive system service can never
+// provide. NoNewPrivileges=yes on the worker unit rules out sudo as an
+// alternative fix (sudo itself needs a new-privilege execve to elevate),
+// so this is the mechanism that actually works for this specific gap.
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
+        subject.user == "vpnforge-worker") {
+        return polkit.Result.YES;
+    }
+});

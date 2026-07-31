@@ -35,6 +35,14 @@ class OpenVpnDriver implements VpnProtocolDriver
 
     private const EASYRSA_SOURCE = '/usr/share/easy-rsa';
 
+    // Ubuntu 24.04's packaged openvpn-server@.service sets
+    // WorkingDirectory=/etc/openvpn/server and passes a relative
+    // --config %i.conf -- the actual server.conf openvpn reads on start
+    // MUST live here (a fixed, distro-defined path), even though every file
+    // it references (CA/cert/key/CRL) stays under this service's own
+    // per-service directory in BASE_DIR.
+    private const UNIT_CONFIG_DIR = '/etc/openvpn/server';
+
     public function provisionService(Service $service): void
     {
         $dir = $this->serviceDir($service);
@@ -214,6 +222,8 @@ class OpenVpnDriver implements VpnProtocolDriver
         if (File::isDirectory($dir)) {
             File::deleteDirectory($dir);
         }
+
+        File::delete($this->unitConfigPath($service));
     }
 
     private function copyEasyRsaInto(string $dir): void
@@ -243,7 +253,11 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         foreach (explode("\n", File::get($indexPath)) as $line) {
             if (str_contains($line, "/CN={$commonName}") && str_starts_with($line, 'V')) {
-                $columns = preg_split('/\t+/', $line);
+                // A single tab per column, not \t+ -- the revocation-date
+                // column is legitimately empty for a valid cert (two
+                // adjacent tabs), and collapsing runs of tabs would eat
+                // that empty field and shift every column after it.
+                $columns = explode("\t", $line);
 
                 return $columns[3] ?? null; // serial column
             }
@@ -264,6 +278,11 @@ class OpenVpnDriver implements VpnProtocolDriver
     private function serviceDir(Service $service): string
     {
         return self::BASE_DIR."/{$service->interface_name}";
+    }
+
+    private function unitConfigPath(Service $service): string
+    {
+        return self::UNIT_CONFIG_DIR."/{$service->interface_name}.conf";
     }
 
     private function unitName(Service $service): string
@@ -342,6 +361,7 @@ class OpenVpnDriver implements VpnProtocolDriver
         ca {$dir}/pki/ca.crt
         cert {$dir}/pki/issued/server.crt
         key {$dir}/pki/private/server.key
+        dh none
         tls-crypt {$dir}/ta.key
         crl-verify {$dir}/crl.pem
         data-ciphers {$dataCiphers}
@@ -353,12 +373,14 @@ class OpenVpnDriver implements VpnProtocolDriver
         persist-key
         persist-tun
         management {$this->managementSocketPath($service)} unix
-        status {$dir}/status.log 10
         verb 3
 
         CONF;
 
-        File::put("{$dir}/server.conf", $contents);
+        // Not {$dir}/server.conf -- see the UNIT_CONFIG_DIR doc comment.
+        // (Ubuntu's unit also supplies its own --status flag on the CLI, so
+        // a `status` directive here would just be redundant.)
+        File::put($this->unitConfigPath($service), $contents);
 
         // NAT for this service's subnet, mirroring the WireGuard driver's
         // PostUp/PreDown -- OpenVPN's own config format has no equivalent

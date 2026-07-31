@@ -19,7 +19,21 @@ use RuntimeException;
  * (systemd AmbientCapabilities=CAP_NET_ADMIN) -- none of it shells out to
  * `sudo`, since the worker process itself already holds the capability it
  * needs, and ambient capabilities are inherited by the child processes it
- * execs (wg, wg-quick, iptables).
+ * execs (wg, iptables).
+ *
+ * Deliberately NOT `wg-quick` for any of that: wg-quick's up/down/strip/save
+ * subcommands all call an internal auto_su() that unconditionally re-execs
+ * itself via `sudo` whenever $UID != 0, regardless of whether the caller
+ * already holds every capability the operation actually needs -- and
+ * NoNewPrivileges=yes on the worker's systemd unit (needed so nothing else
+ * can gain privilege it wasn't explicitly granted) means that sudo call can
+ * never succeed. So the handful of things wg-quick would otherwise do --
+ * create the interface, load the config, add the address, apply the NAT
+ * rules -- are done directly here instead. wg-quick@<iface>.service is
+ * still enabled (see provisionService()) purely so systemd -- running as
+ * real root at boot, never through this worker -- can bring the interface
+ * back up after a reboot; that path never hits auto_su's sudo call in the
+ * first place, since $UID is already 0 there.
  */
 class WireGuardDriver implements VpnProtocolDriver
 {
@@ -39,7 +53,20 @@ class WireGuardDriver implements VpnProtocolDriver
 
             $this->writeConfig($service, $privateKey);
 
-            Process::run(['wg-quick', 'up', $service->interface_name])->throw();
+            Process::run(['ip', 'link', 'add', $service->interface_name, 'type', 'wireguard'])->throw();
+            $this->syncConfFromDisk($service);
+            Process::run(['ip', 'address', 'add', $this->gatewayAddress($service).'/'.$this->prefixLength($service), 'dev', $service->interface_name])->throw();
+
+            $mtu = (string) ($config['mtu'] ?? 1420);
+            Process::run(['ip', 'link', 'set', 'mtu', $mtu, 'up', 'dev', $service->interface_name])->throw();
+
+            $this->applyNatRules($service, add: true);
+
+            // Enabled (not started -- the interface is already up, done
+            // manually above) purely so a reboot brings it back: systemd
+            // runs wg-quick as root directly, so auto_su's sudo call is a
+            // no-op there and this is the one context where wg-quick itself
+            // is fine to rely on.
             Process::run(['systemctl', 'enable', "wg-quick@{$service->interface_name}"])->throw();
         }
 
@@ -58,22 +85,7 @@ class WireGuardDriver implements VpnProtocolDriver
         }
 
         $this->writeConfig($service, $privateKey);
-
-        // wg-quick-only keys (Address/PostUp/PreDown/...) have to be
-        // stripped before handing the file to `wg syncconf`, which only
-        // understands the [Interface]/[Peer] fields the kernel module
-        // itself knows about. PostUp/PreDown therefore only take effect on
-        // a full wg-quick up/down cycle, not here -- that's expected.
-        $stripped = Process::run(['wg-quick', 'strip', $this->confPath($service)])->throw()->output();
-
-        $tmpPath = tempnam(sys_get_temp_dir(), 'wgsync');
-        File::put($tmpPath, $stripped);
-
-        try {
-            Process::run(['wg', 'syncconf', $service->interface_name, $tmpPath])->throw();
-        } finally {
-            File::delete($tmpPath);
-        }
+        $this->syncConfFromDisk($service);
     }
 
     public function addUser(Service $service, ServiceUser $user): void
@@ -184,8 +196,13 @@ class WireGuardDriver implements VpnProtocolDriver
         $confPath = $this->confPath($service);
 
         if (File::exists($confPath)) {
-            Process::run(['systemctl', 'disable', '--now', "wg-quick@{$service->interface_name}"])->run();
-            Process::run(['wg-quick', 'down', $service->interface_name])->run();
+            // Disable only (not --now): there is nothing for systemd to
+            // stop, since the interface was brought up directly rather
+            // than via `systemctl start wg-quick@...` -- this just prevents
+            // it from being brought back up on the next boot.
+            Process::run(['systemctl', 'disable', "wg-quick@{$service->interface_name}"])->run();
+            $this->applyNatRules($service, add: false);
+            Process::run(['ip', 'link', 'delete', $service->interface_name])->run();
             File::delete($confPath);
         }
     }
@@ -226,6 +243,80 @@ class WireGuardDriver implements VpnProtocolDriver
         }
 
         return null;
+    }
+
+    /**
+     * Re-reads the just-written config from disk, strips the wg-quick-only
+     * directives (Address/MTU/PostUp/PreDown/... -- kept in the file itself
+     * for wg-quick's own benefit at boot, but not understood by plain
+     * `wg(8)`), and hands the result to `wg syncconf` -- the non-wg-quick
+     * equivalent of `wg-quick strip <conf> | wg syncconf <iface> -`.
+     */
+    private function syncConfFromDisk(Service $service): void
+    {
+        $stripped = $this->stripWgQuickDirectives(File::get($this->confPath($service)));
+
+        $tmpPath = tempnam(sys_get_temp_dir(), 'wgsync');
+        File::put($tmpPath, $stripped);
+
+        try {
+            Process::run(['wg', 'syncconf', $service->interface_name, $tmpPath])->throw();
+        } finally {
+            File::delete($tmpPath);
+        }
+    }
+
+    /**
+     * Mirrors wg-quick's cmd_strip: drop every line whose key is one of
+     * wg-quick's own directives (case-insensitive), keep everything else
+     * (section headers, comments, and every field plain `wg(8)` itself
+     * understands) untouched.
+     */
+    private function stripWgQuickDirectives(string $contents): string
+    {
+        $wgQuickOnlyKeys = ['address', 'dns', 'mtu', 'table', 'preup', 'predown', 'postup', 'postdown', 'saveconfig'];
+
+        $lines = array_filter(explode("\n", $contents), function (string $line) use ($wgQuickOnlyKeys) {
+            $key = strtolower(trim(explode('=', $line, 2)[0] ?? ''));
+
+            return ! in_array($key, $wgQuickOnlyKeys, true);
+        });
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * The same NAT rules wg-quick would otherwise apply via the config's
+     * own PostUp/PreDown lines (see writeConfig()) -- applied directly here
+     * since this driver no longer relies on wg-quick to interpret them for
+     * on-demand actions (only the reboot path still does, via systemd).
+     * `-C` checks whether a rule already exists so both directions are
+     * idempotent: re-provisioning won't duplicate it, and tearing down an
+     * already-torn-down service won't error trying to remove what's gone.
+     */
+    private function applyNatRules(Service $service, bool $add): void
+    {
+        $egressInterface = ($service->config ?? [])['egress_interface'] ?? 'eth0';
+
+        // [table args, chain, rule-specification] -- the operation flag
+        // (-C/-A/-D) has to sit directly before the chain name, so it's
+        // spliced in separately below rather than folded into one flat
+        // argv list per rule.
+        $rules = [
+            [['-t', 'nat'], 'POSTROUTING', ['-s', $service->subnet_cidr, '-o', $egressInterface, '-j', 'MASQUERADE']],
+            [[], 'FORWARD', ['-i', $service->interface_name, '-j', 'ACCEPT']],
+            [[], 'FORWARD', ['-o', $service->interface_name, '-j', 'ACCEPT']],
+        ];
+
+        foreach ($rules as [$tableArgs, $chain, $ruleArgs]) {
+            $ruleExists = Process::run(['iptables', ...$tableArgs, '-C', $chain, ...$ruleArgs])->successful();
+
+            if ($add && ! $ruleExists) {
+                Process::run(['iptables', ...$tableArgs, '-A', $chain, ...$ruleArgs])->throw();
+            } elseif (! $add && $ruleExists) {
+                Process::run(['iptables', ...$tableArgs, '-D', $chain, ...$ruleArgs])->throw();
+            }
+        }
     }
 
     private function writeConfig(Service $service, string $privateKey): void

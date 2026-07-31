@@ -63,6 +63,18 @@ func TailDNSLog(ctx context.Context, path string, serviceID int64, store *Store,
 				if !openFile() {
 					continue // dnsmasq for this service isn't up yet -- retry next tick.
 				}
+			} else if fi, statErr := os.Stat(path); statErr == nil {
+				// dnsmasq recreates this file on every restart (and a
+				// logrotate-style rotation would too) -- the currently
+				// open fd would keep pointing at the old, now-orphaned
+				// inode and silently never see another line again.
+				if curFi, curErr := file.Stat(); curErr == nil && !os.SameFile(fi, curFi) {
+					file.Close()
+					file = nil
+					if !openFile() {
+						continue
+					}
+				}
 			}
 
 			for {

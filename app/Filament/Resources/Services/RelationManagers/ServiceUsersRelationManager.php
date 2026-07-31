@@ -92,9 +92,22 @@ class ServiceUsersRelationManager extends RelationManager
                     ->label('Download config')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->action(function (ServiceUser $record) {
-                        /** @var Service $service */
-                        $service = $this->getOwnerRecord();
-                        $file = $service->driver()->buildClientConfig($service, $record);
+                        // Read the copy the privileged worker rendered and
+                        // cached at addUser()/applyServiceConfig() time --
+                        // this web process has no filesystem access to the
+                        // actual private keys/certificates, only the
+                        // worker does (see ServiceUser::refreshRenderedClientConfig).
+                        $file = $record->clientConfigFile();
+
+                        if ($file === null) {
+                            Notification::make()
+                                ->title('Config not ready yet')
+                                ->body('Still being generated in the background -- try again in a moment.')
+                                ->warning()
+                                ->send();
+
+                            return null;
+                        }
 
                         return response()->streamDownload(
                             fn () => print ($file->contents),

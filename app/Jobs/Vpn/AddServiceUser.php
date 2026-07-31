@@ -26,6 +26,7 @@ class AddServiceUser implements ShouldQueue
 
         try {
             $service->driver()->addUser($service, $this->serviceUser);
+            $this->serviceUser->refreshRenderedClientConfig();
         } catch (Throwable $e) {
             $service->forceFill(['last_error' => $e->getMessage()])->save();
 
