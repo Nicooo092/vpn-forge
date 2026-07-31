@@ -35,13 +35,26 @@ class TrafficLogsRelationManager extends RelationManager
                 TextColumn::make('occurred_at')
                     ->dateTime()
                     ->sortable(),
-                TextColumn::make('source_ip'),
+                TextColumn::make('source_ip')
+                    ->label('Source IP')
+                    ->fontFamily('mono')
+                    ->placeholder('--'),
                 TextColumn::make('host')
                     ->searchable()
+                    ->placeholder('not resolved')
                     ->limit(50),
-                TextColumn::make('detail')
+                // ->state(), not ->formatStateUsing(): detail is a json column
+                // cast to an array, and Filament runs the formatter once per
+                // array element and joins the results with ", " -- so a DNS
+                // row (3 keys) printed the same summary three times over, and
+                // an HTTP row (5 keys) five times. Worse, a null or empty
+                // detail is treated as blank before formatting runs at all, so
+                // the formatter never fired and the cell came out empty.
+                // Computing the state directly sidesteps both.
+                TextColumn::make('summary')
                     ->label('Summary')
-                    ->formatStateUsing(fn (TrafficLog $record) => $this->summarize($record))
+                    ->state(fn (TrafficLog $record) => $this->summarize($record))
+                    ->placeholder('no detail recorded')
                     ->limit(60),
             ])
             ->filters([
@@ -73,13 +86,22 @@ class TrafficLogsRelationManager extends RelationManager
                             ->deleteFileAfterSend(true);
                     }),
             ])
+            ->emptyStateIcon('heroicon-o-document-magnifying-glass')
+            ->emptyStateHeading('No traffic logs')
+            ->emptyStateDescription('Rows appear once a user with logging enabled connects and resolves a domain. Clients must be pointed at this service\'s own DNS resolver for their queries to be visible here.')
             ->defaultSort('occurred_at', 'desc')
             ->poll('15s');
     }
 
-    private function summarize(TrafficLog $record): string
+    private function summarize(TrafficLog $record): ?string
     {
         $detail = $record->detail ?? [];
+
+        // Let the column's placeholder speak rather than rendering
+        // "Query: ? -> ?" out of nothing.
+        if ($detail === []) {
+            return null;
+        }
 
         return match ($record->kind) {
             TrafficLogKind::Dns => 'Query: '.($detail['query_type'] ?? '?').' -> '.($detail['answer'] ?? '?'),

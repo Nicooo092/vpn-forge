@@ -79,16 +79,17 @@ class ServiceUsersRelationManager extends RelationManager
                 // least once with the peer present, which is a normal state
                 // for a user who has never connected -- say so explicitly
                 // rather than rendering a blank cell that reads as broken.
+                // No ->dateTime() here: ->since() overwrites the formatter it
+                // sets, so pairing them just leaves dead code. The absolute
+                // timestamp lives in the tooltip instead.
                 TextColumn::make('last_handshake_at')
                     ->label('Last handshake')
-                    ->dateTime()
                     ->since()
                     ->placeholder('never connected')
                     ->tooltip(fn (ServiceUser $record) => $record->last_handshake_at?->toDayDateTimeString())
                     ->sortable(),
                 TextColumn::make('last_connected_at')
                     ->label('Last connected')
-                    ->dateTime()
                     ->since()
                     ->placeholder('never connected')
                     ->tooltip(fn (ServiceUser $record) => $record->last_connected_at?->toDayDateTimeString())

@@ -21,7 +21,9 @@ class ConnectionLogsRelationManager extends RelationManager
         return $table
             ->columns([
                 TextColumn::make('serviceUser.name')
-                    ->label('User'),
+                    ->label('User')
+                    ->placeholder('deleted user')
+                    ->searchable(),
                 TextColumn::make('connected_at')
                     ->dateTime()
                     ->sortable(),
@@ -30,7 +32,9 @@ class ConnectionLogsRelationManager extends RelationManager
                     ->placeholder('still connected')
                     ->sortable(),
                 TextColumn::make('peer_ip')
-                    ->label('From IP'),
+                    ->label('From IP')
+                    ->fontFamily('mono')
+                    ->placeholder('--'),
                 TextColumn::make('bytes_in')
                     ->label('Received')
                     ->formatStateUsing(fn (?int $state) => $this->formatBytes($state ?? 0)),
@@ -38,6 +42,9 @@ class ConnectionLogsRelationManager extends RelationManager
                     ->label('Sent')
                     ->formatStateUsing(fn (?int $state) => $this->formatBytes($state ?? 0)),
             ])
+            ->emptyStateIcon('heroicon-o-signal')
+            ->emptyStateHeading('No connection logs')
+            ->emptyStateDescription('A session is recorded when polling finds a peer that handshook within the last few minutes, so a client has to be connected while the service is being polled -- sessions that ended before then are not backfilled.')
             ->defaultSort('connected_at', 'desc')
             ->poll('10s');
     }
