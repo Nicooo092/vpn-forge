@@ -28,6 +28,11 @@ class DnsmasqManager
         $gatewayIp = $this->gatewayAddress($service);
         $logPath = $this->logPath($service);
 
+        $upstreams = collect($service->config['dns_upstreams'] ?? ['1.1.1.1', '1.0.0.1'])
+            ->filter()
+            ->map(fn (string $server) => "server={$server}")
+            ->implode("\n");
+
         // Truncate rather than append across re-provisions, so a
         // re-applied service doesn't inherit a stale log file with the
         // wrong ownership/permissions.
@@ -43,8 +48,7 @@ class DnsmasqManager
         no-dhcp-interface={$service->interface_name}
         no-resolv
         no-hosts
-        server=1.1.1.1
-        server=1.0.0.1
+        {$upstreams}
         log-queries=extra
         log-facility={$logPath}
 

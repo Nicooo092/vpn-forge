@@ -13,6 +13,7 @@ use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Select;
@@ -74,16 +75,37 @@ class ServiceUsersRelationManager extends RelationManager
                     ->boolean()
                     ->state(fn (ServiceUser $record) => $record->loggingEffective())
                     ->tooltip(fn (ServiceUser $record) => $record->logging_override === null ? 'Inherited from service default' : 'Overridden for this user'),
+                // These three stay empty until the service has been polled at
+                // least once with the peer present, which is a normal state
+                // for a user who has never connected -- say so explicitly
+                // rather than rendering a blank cell that reads as broken.
                 TextColumn::make('last_handshake_at')
                     ->label('Last handshake')
                     ->dateTime()
-                    ->since(),
+                    ->since()
+                    ->placeholder('never connected')
+                    ->tooltip(fn (ServiceUser $record) => $record->last_handshake_at?->toDayDateTimeString())
+                    ->sortable(),
                 TextColumn::make('last_connected_at')
                     ->label('Last connected')
                     ->dateTime()
-                    ->since(),
+                    ->since()
+                    ->placeholder('never connected')
+                    ->tooltip(fn (ServiceUser $record) => $record->last_connected_at?->toDayDateTimeString())
+                    ->sortable()
+                    ->toggleable(),
                 TextColumn::make('last_seen_ip')
-                    ->label('Last seen from'),
+                    ->label('Last seen from')
+                    ->placeholder('--')
+                    ->fontFamily('mono')
+                    ->copyable(),
+                TextColumn::make('traffic')
+                    ->label('Traffic')
+                    ->state(fn (ServiceUser $record) => $record->last_cumulative_bytes_in + $record->last_cumulative_bytes_out === 0
+                        ? null
+                        : self::formatBytes($record->last_cumulative_bytes_in).' in / '.self::formatBytes($record->last_cumulative_bytes_out).' out')
+                    ->placeholder('no traffic yet')
+                    ->tooltip('Cumulative since the tunnel was last brought up'),
             ])
             ->headerActions([
                 CreateAction::make()
@@ -94,73 +116,95 @@ class ServiceUsersRelationManager extends RelationManager
                     })
                     ->after(fn (ServiceUser $record) => AddServiceUser::dispatch($record)),
             ])
+            // Four row actions rendered inline overflow the row and push the
+            // telemetry columns out of view -- collapse them into one
+            // dropdown instead.
             ->recordActions([
-                Action::make('download')
-                    ->label('Download config')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->action(function (ServiceUser $record) {
-                        // Read the copy the privileged worker rendered and
-                        // cached at addUser()/applyServiceConfig() time --
-                        // this web process has no filesystem access to the
-                        // actual private keys/certificates, only the
-                        // worker does (see ServiceUser::refreshRenderedClientConfig).
-                        $file = $record->clientConfigFile();
+                ActionGroup::make([
+                    Action::make('download')
+                        ->label('Download config')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->action(function (ServiceUser $record) {
+                            // Read the copy the privileged worker rendered and
+                            // cached at addUser()/applyServiceConfig() time --
+                            // this web process has no filesystem access to the
+                            // actual private keys/certificates, only the
+                            // worker does (see ServiceUser::refreshRenderedClientConfig).
+                            $file = $record->clientConfigFile();
 
-                        if ($file === null) {
+                            if ($file === null) {
+                                Notification::make()
+                                    ->title('Config not ready yet')
+                                    ->body('Still being generated in the background -- try again in a moment.')
+                                    ->warning()
+                                    ->send();
+
+                                return null;
+                            }
+
+                            return response()->streamDownload(
+                                fn () => print ($file->contents),
+                                $file->filename,
+                            );
+                        }),
+                    Action::make('qr')
+                        ->label('QR code')
+                        ->icon('heroicon-o-qr-code')
+                        // WireGuard only. An .ovpn embeds the CA, the client
+                        // certificate and its private key, which runs to several
+                        // kilobytes -- well past what a QR code can carry (~2.9 KB
+                        // at the absolute theoretical maximum, and much less while
+                        // staying scannable by a phone). A WireGuard config is
+                        // ~330 bytes.
+                        ->visible(fn (ServiceUser $record) => $record->service->protocol === VpnProtocol::WireGuard)
+                        ->modalHeading(fn (ServiceUser $record) => "Scan to import {$record->name}")
+                        // Wide enough that a dense config still renders large
+                        // enough to scan -- see the view for the measurements.
+                        ->modalWidth(Width::TwoExtraLarge)
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Close')
+                        ->modalContent(fn (ServiceUser $record) => view(
+                            'filament.service-user-qr',
+                            $this->qrModalData($record),
+                        )),
+                    Action::make('revoke')
+                        ->label('Revoke')
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
+                        ->action(function (ServiceUser $record) {
+                            $record->forceFill(['status' => ServiceUserStatus::Revoked])->save();
+                            RemoveServiceUser::dispatch($record);
+
                             Notification::make()
-                                ->title('Config not ready yet')
-                                ->body('Still being generated in the background -- try again in a moment.')
-                                ->warning()
+                                ->title('User revoked')
+                                ->body('Applying the change in the background...')
+                                ->success()
                                 ->send();
-
-                            return null;
-                        }
-
-                        return response()->streamDownload(
-                            fn () => print ($file->contents),
-                            $file->filename,
-                        );
-                    }),
-                Action::make('qr')
-                    ->label('QR code')
-                    ->icon('heroicon-o-qr-code')
-                    // WireGuard only. An .ovpn embeds the CA, the client
-                    // certificate and its private key, which runs to several
-                    // kilobytes -- well past what a QR code can carry (~2.9 KB
-                    // at the absolute theoretical maximum, and much less while
-                    // staying scannable by a phone). A WireGuard config is
-                    // ~330 bytes.
-                    ->visible(fn (ServiceUser $record) => $record->service->protocol === VpnProtocol::WireGuard)
-                    ->modalHeading(fn (ServiceUser $record) => "Scan to import {$record->name}")
-                    // Wide enough that a dense config still renders large
-                    // enough to scan -- see the view for the measurements.
-                    ->modalWidth(Width::TwoExtraLarge)
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Close')
-                    ->modalContent(fn (ServiceUser $record) => view(
-                        'filament.service-user-qr',
-                        $this->qrModalData($record),
-                    )),
-                Action::make('revoke')
-                    ->label('Revoke')
-                    ->icon('heroicon-o-no-symbol')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
-                    ->action(function (ServiceUser $record) {
-                        $record->forceFill(['status' => ServiceUserStatus::Revoked])->save();
-                        RemoveServiceUser::dispatch($record);
-
-                        Notification::make()
-                            ->title('User revoked')
-                            ->body('Applying the change in the background...')
-                            ->success()
-                            ->send();
-                    }),
-                DeleteAction::make()
-                    ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Revoked),
+                        }),
+                    DeleteAction::make()
+                        ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Revoked),
+                ]),
             ])
+            ->emptyStateIcon('heroicon-o-users')
+            ->emptyStateHeading('No users yet')
+            ->emptyStateDescription('Add a user to generate their keys and a downloadable client config. Telemetry appears here once they connect.')
             ->poll('5s');
+    }
+
+    private static function formatBytes(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $value = $bytes;
+        $unitIndex = 0;
+
+        while ($value >= 1024 && $unitIndex < count($units) - 1) {
+            $value /= 1024;
+            $unitIndex++;
+        }
+
+        return round($value, 1).' '.$units[$unitIndex];
     }
 
     /**

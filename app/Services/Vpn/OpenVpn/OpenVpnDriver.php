@@ -346,11 +346,30 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         $dataCiphers = $config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305';
         $keepalive = $config['keepalive'] ?? '10 60';
+        $authDigest = $config['auth_digest'] ?? 'SHA256';
+        $tlsVersionMin = $config['tls_version_min'] ?? '1.2';
+        $verb = (int) ($config['verb'] ?? 3);
         $redirectGateway = ($config['redirect_gateway'] ?? true) ? "push \"redirect-gateway def1 bypass-dhcp\"\n" : '';
         $pushRoutes = collect($config['push_routes'] ?? [])
             ->map(fn (string $route) => "push \"route {$route}\"")
             ->implode("\n");
         $egressInterface = $config['egress_interface'] ?? 'eth0';
+
+        // Without this, OpenVPN clients keep using whatever resolver they had
+        // before connecting, so this service's dnsmasq instance -- which is
+        // provisioned for every service regardless of protocol -- never sees a
+        // single query and DNS-based traffic logging silently captures
+        // nothing. WireGuard clients get the equivalent through the DNS= line
+        // in their generated config.
+        $pushDns = ($config['push_dns'] ?? true)
+            ? "push \"dhcp-option DNS {$this->gatewayAddress($service)}\"\n"
+            : '';
+
+        $maxClients = isset($config['max_clients']) && $config['max_clients'] !== null && $config['max_clients'] !== ''
+            ? 'max-clients '.(int) $config['max_clients']."\n"
+            : '';
+
+        $duplicateCn = ($config['duplicate_cn'] ?? false) ? "duplicate-cn\n" : '';
 
         $contents = <<<CONF
         port {$service->listen_port}
@@ -366,14 +385,14 @@ class OpenVpnDriver implements VpnProtocolDriver
         crl-verify {$dir}/crl.pem
         data-ciphers {$dataCiphers}
         data-ciphers-fallback AES-256-GCM
-        auth SHA256
-        tls-version-min 1.2
+        auth {$authDigest}
+        tls-version-min {$tlsVersionMin}
         keepalive {$keepalive}
-        {$redirectGateway}{$pushRoutes}
+        {$maxClients}{$duplicateCn}{$redirectGateway}{$pushDns}{$pushRoutes}
         persist-key
         persist-tun
         management {$this->managementSocketPath($service)} unix
-        verb 3
+        verb {$verb}
 
         CONF;
 
@@ -397,6 +416,20 @@ class OpenVpnDriver implements VpnProtocolDriver
     private function networkAddress(Service $service): string
     {
         return explode('/', $service->subnet_cidr)[0];
+    }
+
+    /**
+     * The .1 of the subnet: with `topology subnet` OpenVPN takes this address
+     * for the server end of the tunnel, and it is also what DnsmasqManager
+     * binds this service's resolver to -- the two have to agree or the pushed
+     * DNS server points at nothing.
+     */
+    private function gatewayAddress(Service $service): string
+    {
+        $parts = explode('.', $this->networkAddress($service));
+        $parts[3] = '1';
+
+        return implode('.', $parts);
     }
 
     private function netmask(Service $service): string

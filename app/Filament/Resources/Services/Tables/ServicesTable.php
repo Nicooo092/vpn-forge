@@ -4,15 +4,18 @@ namespace App\Filament\Resources\Services\Tables;
 
 use App\Enums\ServiceStatus;
 use App\Enums\VpnProtocol;
+use App\Jobs\Vpn\ProvisionService;
 use App\Jobs\Vpn\RemoveService;
 use App\Models\Service;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 
 class ServicesTable
 {
@@ -25,8 +28,18 @@ class ServicesTable
                     ->weight('bold'),
                 TextColumn::make('protocol')
                     ->badge(),
+                // A service that fails to provision stores why in last_error,
+                // which nothing used to surface -- the panel just showed a red
+                // "Error" badge and left you to go read the queue worker's
+                // journal over SSH to find out what happened.
                 TextColumn::make('status')
-                    ->badge(),
+                    ->badge()
+                    ->description(fn (Service $record) => $record->status === ServiceStatus::Error
+                        ? Str::limit($record->last_error, 60)
+                        : null)
+                    ->tooltip(fn (Service $record) => $record->status === ServiceStatus::Error
+                        ? $record->last_error
+                        : null),
                 TextColumn::make('interface_name')
                     ->label('Interface')
                     ->fontFamily('mono')
@@ -56,28 +69,58 @@ class ServicesTable
                 SelectFilter::make('status')->options(ServiceStatus::class),
             ])
             ->recordActions([
-                EditAction::make(),
-                // Not a plain DeleteAction: tearing down the interface/NAT
-                // rules/systemd unit needs CAP_NET_ADMIN, which the web
-                // process doesn't have -- this dispatches a privileged job
-                // instead, which deletes the record itself once teardown
-                // has actually completed.
-                Action::make('remove')
-                    ->label('Remove')
-                    ->icon('heroicon-o-trash')
-                    ->color('danger')
-                    ->requiresConfirmation()
-                    ->modalDescription('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.')
-                    ->action(function (Service $record) {
-                        RemoveService::dispatch($record);
+                ActionGroup::make([
+                    EditAction::make(),
+                    // Recovering a service stuck in Error used to mean SSHing
+                    // in and re-dispatching the job by hand. provisionService()
+                    // skips interface creation when the config file already
+                    // exists, so re-running it on a half-provisioned service
+                    // finishes the missing steps without disturbing a tunnel
+                    // that is already up.
+                    Action::make('retry')
+                        ->label('Retry provisioning')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalDescription('Re-runs provisioning for this service. Existing interfaces and connected clients are left alone.')
+                        ->visible(fn (Service $record) => $record->status === ServiceStatus::Error)
+                        ->action(function (Service $record) {
+                            ProvisionService::dispatch($record);
 
-                        Notification::make()
-                            ->title('Removing service')
-                            ->body('Tearing down in the background -- it will disappear from this list once finished.')
-                            ->success()
-                            ->send();
-                    }),
+                            Notification::make()
+                                ->title('Retrying provisioning')
+                                ->body('Running in the background -- the status will update here on its own.')
+                                ->success()
+                                ->send();
+                        }),
+                    // Not a plain DeleteAction: tearing down the interface/NAT
+                    // rules/systemd unit needs CAP_NET_ADMIN, which the web
+                    // process doesn't have -- this dispatches a privileged job
+                    // instead, which deletes the record itself once teardown
+                    // has actually completed.
+                    Action::make('remove')
+                        ->label('Remove')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalDescription('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.')
+                        ->action(function (Service $record) {
+                            RemoveService::dispatch($record);
+
+                            Notification::make()
+                                ->title('Removing service')
+                                ->body('Tearing down in the background -- it will disappear from this list once finished.')
+                                ->success()
+                                ->send();
+                        }),
+                ]),
             ])
+            ->emptyStateIcon('heroicon-o-shield-check')
+            ->emptyStateHeading('No VPN services yet')
+            ->emptyStateDescription('Create one to provision a WireGuard or OpenVPN server, then add users to it.')
+            // Status moves through provisioning -> active/error in a background
+            // job, so the row has to refresh itself or it looks stuck.
+            ->poll('10s')
             ->defaultSort('name');
     }
 }
