@@ -2,7 +2,11 @@
 
 setup_capture_agent() {
   output "Building the capture agent..."
-  (cd "${APP_DIR}/agent" && go build -o /usr/local/bin/vpnforge-agent .)
+  # -buildvcs=false: agent/ sits inside the vpn-forge git checkout, and Go
+  # tries to embed VCS status into the binary by shelling out to git --
+  # which fails here (root cloned the repo, but git's ownership checks can
+  # still trip in some environments). The build doesn't need VCS stamping.
+  (cd "${APP_DIR}/agent" && go build -buildvcs=false -o /usr/local/bin/vpnforge-agent .)
 
   output "Granting the agent capture capabilities (setcap, not root)..."
   setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/vpnforge-agent
