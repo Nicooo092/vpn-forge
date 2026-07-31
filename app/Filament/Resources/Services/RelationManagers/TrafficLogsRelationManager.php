@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\Services\RelationManagers;
 
+use App\Enums\ServiceUserStatus;
 use App\Enums\TrafficLogKind;
 use App\Models\Service;
+use App\Models\ServiceUser;
 use App\Models\TrafficLog;
 use App\Services\Logs\LogExporter;
 use Filament\Actions\Action;
@@ -109,7 +111,30 @@ class TrafficLogsRelationManager extends RelationManager
             ])
             ->emptyStateIcon('heroicon-o-document-magnifying-glass')
             ->emptyStateHeading('No traffic logs')
-            ->emptyStateDescription('Rows appear once a user with logging enabled connects and resolves a domain. Clients must be pointed at this service\'s own DNS resolver for their queries to be visible here.')
+            // Generic advice here is useless: the overwhelmingly common reason
+            // this table stays empty is that logging is switched off for the
+            // very users being watched, and the panel is the only thing that
+            // can see that. Name them.
+            ->emptyStateDescription(function (): string {
+                /** @var Service $service */
+                $service = $this->getOwnerRecord();
+
+                $silenced = $service->serviceUsers()
+                    ->where('status', ServiceUserStatus::Active)
+                    ->get()
+                    ->reject(fn (ServiceUser $user) => $user->loggingEffective());
+
+                if ($silenced->isNotEmpty()) {
+                    return 'Logging is switched off for '.$silenced->pluck('name')->join(', ', ' and ')
+                        .', so nothing they do is recorded. Change it on the Service Users tab: edit the user and set Logging to "Force on".';
+                }
+
+                if ($service->serviceUsers()->where('status', ServiceUserStatus::Active)->doesntExist()) {
+                    return 'This service has no active users yet. Add one on the Service Users tab.';
+                }
+
+                return 'Rows appear once a user connects and resolves a domain. Their device has to be using the config this panel generates, since that is what points it at this service\'s resolver -- a config downloaded before the resolver was set still names a public one.';
+            })
             ->defaultSort('occurred_at', 'desc')
             ->poll('15s');
     }

@@ -74,7 +74,13 @@ class ServiceUsersRelationManager extends RelationManager
                     ->label('Logging')
                     ->boolean()
                     ->state(fn (ServiceUser $record) => $record->loggingEffective())
-                    ->tooltip(fn (ServiceUser $record) => $record->logging_override === null ? 'Inherited from service default' : 'Overridden for this user'),
+                    // Say what the icon means for capture, not just where the
+                    // setting came from -- a red cross here is the single most
+                    // common reason the Traffic logs tab stays empty.
+                    ->tooltip(fn (ServiceUser $record) => ($record->loggingEffective()
+                        ? 'Connections, DNS lookups and plaintext HTTP are recorded for this user'
+                        : 'Nothing is recorded for this user, and the Traffic logs tab stays empty for them')
+                        .($record->logging_override === null ? ' (inherited from the service default)' : ' (set on this user)')),
                 // These three stay empty until the service has been polled at
                 // least once with the peer present, which is a normal state
                 // for a user who has never connected -- say so explicitly
