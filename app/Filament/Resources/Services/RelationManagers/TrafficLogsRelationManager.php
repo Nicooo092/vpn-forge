@@ -40,9 +40,30 @@ class TrafficLogsRelationManager extends RelationManager
                     ->fontFamily('mono')
                     ->placeholder('--'),
                 TextColumn::make('host')
+                    ->label('Domain')
                     ->searchable()
                     ->placeholder('not resolved')
                     ->limit(50),
+                // The two legs beyond the client's request: who the server
+                // asked, and what came back.
+                TextColumn::make('via')
+                    ->label('Resolved via')
+                    ->state(fn (TrafficLog $record) => match (true) {
+                        ($record->detail['cached'] ?? false) === true => 'cache',
+                        isset($record->detail['forwarded_to'][0]) => implode(', ', $record->detail['forwarded_to']),
+                        default => null,
+                    })
+                    ->badge()
+                    ->color(fn (?string $state) => $state === 'cache' ? 'gray' : 'info')
+                    ->placeholder('--'),
+                TextColumn::make('answer')
+                    ->label('Answer')
+                    ->fontFamily('mono')
+                    ->state(fn (TrafficLog $record) => $record->detail['answers'][0] ?? null)
+                    ->description(fn (TrafficLog $record) => count($record->detail['answers'] ?? []) > 1
+                        ? '+'.(count($record->detail['answers']) - 1).' more'
+                        : null)
+                    ->placeholder('no answer'),
                 // ->state(), not ->formatStateUsing(): detail is a json column
                 // cast to an array, and Filament runs the formatter once per
                 // array element and joins the results with ", " -- so a DNS
@@ -104,8 +125,27 @@ class TrafficLogsRelationManager extends RelationManager
         }
 
         return match ($record->kind) {
-            TrafficLogKind::Dns => 'Query: '.($detail['query_type'] ?? '?').' -> '.($detail['answer'] ?? '?'),
+            TrafficLogKind::Dns => $this->summarizeDns($detail),
             TrafficLogKind::Http => ($detail['method'] ?? '?').' '.($detail['path'] ?? '').' ('.($detail['status_code'] ?? '?').')',
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function summarizeDns(array $detail): string
+    {
+        $answers = $detail['answers'] ?? [];
+        $chain = $detail['cname_chain'] ?? [];
+
+        $summary = ($detail['query_type'] ?? '?').' query';
+
+        if ($chain !== []) {
+            $summary .= ' via '.implode(' -> ', $chain);
+        }
+
+        return $summary.', '.($answers === []
+            ? 'no answer'
+            : count($answers).' '.(count($answers) === 1 ? 'answer' : 'answers'));
     }
 }
