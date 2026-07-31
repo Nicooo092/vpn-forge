@@ -10,10 +10,13 @@ use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Services\RelationManagers\ConnectionLogsRelationManager;
 use App\Filament\Resources\Services\RelationManagers\ServiceUsersRelationManager;
 use App\Filament\Resources\Services\RelationManagers\TrafficLogsRelationManager;
+use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -87,6 +90,59 @@ class RelationManagersTest extends TestCase
         $this->trafficTab()
             ->assertOk()
             ->assertSee('resolver');
+    }
+
+    /**
+     * The users table shipped with no edit action at all, so logging could be
+     * chosen when the user was created and never changed again -- and it is
+     * the switch that decides whether anything is captured for them.
+     */
+    public function test_logging_can_be_turned_on_for_an_existing_user(): void
+    {
+        Queue::fake();
+
+        $user = $this->addUser('phone', loggingOverride: false);
+        $this->assertFalse($user->loggingEffective());
+
+        Livewire::test(ServiceUsersRelationManager::class, [
+            'ownerRecord' => $this->service,
+            'pageClass' => EditService::class,
+        ])
+            ->callAction(TestAction::make('edit')->table($user), data: [
+                'name' => $user->name,
+                'tunnel_ip' => $user->tunnel_ip,
+                'logging_override' => '1',
+            ])
+            ->assertHasNoActionErrors();
+
+        $user->refresh();
+
+        $this->assertTrue($user->logging_override);
+        $this->assertTrue($user->loggingEffective());
+
+        // Logging alone must not disturb the running interface.
+        Queue::assertNotPushed(ApplyServiceConfig::class);
+    }
+
+    public function test_moving_a_user_to_another_address_re_applies_the_service(): void
+    {
+        Queue::fake();
+
+        $user = $this->addUser('phone', loggingOverride: null);
+
+        Livewire::test(ServiceUsersRelationManager::class, [
+            'ownerRecord' => $this->service,
+            'pageClass' => EditService::class,
+        ])
+            ->callAction(TestAction::make('edit')->table($user), data: [
+                'name' => $user->name,
+                'tunnel_ip' => '10.60.0.251',
+                'logging_override' => '',
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertSame('10.60.0.251', $user->refresh()->tunnel_ip);
+        Queue::assertPushed(ApplyServiceConfig::class);
     }
 
     public function test_the_other_relation_managers_render(): void

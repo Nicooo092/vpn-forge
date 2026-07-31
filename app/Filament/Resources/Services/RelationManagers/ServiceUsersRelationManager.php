@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Services\RelationManagers;
 use App\Enums\ServiceUserStatus;
 use App\Enums\VpnProtocol;
 use App\Jobs\Vpn\AddServiceUser;
+use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Jobs\Vpn\RemoveServiceUser;
 use App\Models\Service;
 use App\Models\ServiceUser;
@@ -16,6 +17,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -128,6 +130,43 @@ class ServiceUsersRelationManager extends RelationManager
             // dropdown instead.
             ->recordActions([
                 ActionGroup::make([
+                    // There was no way to edit a user at all: the form below
+                    // was only ever reachable from the create action, so a
+                    // setting as consequential as whether that user's traffic
+                    // is recorded could be chosen once and never changed.
+                    EditAction::make()
+                        ->fillForm(fn (ServiceUser $record) => [
+                            'name' => $record->name,
+                            'tunnel_ip' => $record->tunnel_ip,
+                            // The select trades in strings so it can offer
+                            // "inherit" alongside the two booleans.
+                            'logging_override' => match ($record->logging_override) {
+                                null => '',
+                                true => '1',
+                                false => '0',
+                            },
+                        ])
+                        ->mutateFormDataUsing(function (array $data): array {
+                            $data['logging_override'] = $data['logging_override'] === '' ? null : (bool) $data['logging_override'];
+
+                            return $data;
+                        })
+                        ->after(function (ServiceUser $record, array $data): void {
+                            // Moving a peer to another address changes the
+                            // interface's AllowedIPs and every rendered client
+                            // config, so it has to be re-applied. A logging
+                            // change needs nothing: the capture agent re-reads
+                            // the user table on its own.
+                            if ($record->wasChanged('tunnel_ip')) {
+                                ApplyServiceConfig::dispatch($record->service);
+
+                                Notification::make()
+                                    ->title('Tunnel address changed')
+                                    ->body('Re-applying the service config. Download this user\'s config again -- the old one points at the previous address.')
+                                    ->warning()
+                                    ->send();
+                            }
+                        }),
                     Action::make('download')
                         ->label('Download config')
                         ->icon('heroicon-o-arrow-down-tray')
