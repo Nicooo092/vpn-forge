@@ -5,13 +5,14 @@ namespace App\Filament\Resources\Services;
 use App\Filament\Resources\Services\Pages\CreateService;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Services\Pages\ListServices;
-use App\Filament\Resources\Services\RelationManagers\ConnectionLogsRelationManager;
-use App\Filament\Resources\Services\RelationManagers\ServiceUsersRelationManager;
-use App\Filament\Resources\Services\RelationManagers\TrafficLogsRelationManager;
+use App\Filament\Resources\Services\Pages\ManageConnectionLogs;
+use App\Filament\Resources\Services\Pages\ManageServiceUsers;
+use App\Filament\Resources\Services\Pages\ManageTrafficLogs;
 use App\Filament\Resources\Services\Schemas\ServiceForm;
 use App\Filament\Resources\Services\Tables\ServicesTable;
 use App\Models\Service;
 use BackedEnum;
+use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -23,6 +24,8 @@ class ServiceResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
+    protected static ?string $recordTitleAttribute = 'name';
+
     public static function form(Schema $schema): Schema
     {
         return ServiceForm::configure($schema);
@@ -33,13 +36,24 @@ class ServiceResource extends Resource
         return ServicesTable::configure($table);
     }
 
-    public static function getRelations(): array
+    /**
+     * Each concern gets its own page rather than being stacked as relation
+     * managers underneath the settings form. With a handful of services and
+     * their users, connection history and traffic logs all on one screen,
+     * there is no way to look at any one of them without wading past the
+     * others -- and each of these tables is one somebody comes to the panel
+     * specifically to read.
+     *
+     * @return array<class-string<Page>>
+     */
+    public static function getRecordSubNavigation(Page $page): array
     {
-        return [
-            ServiceUsersRelationManager::class,
-            ConnectionLogsRelationManager::class,
-            TrafficLogsRelationManager::class,
-        ];
+        return $page->generateNavigationItems([
+            EditService::class,
+            ManageServiceUsers::class,
+            ManageConnectionLogs::class,
+            ManageTrafficLogs::class,
+        ]);
     }
 
     public static function getPages(): array
@@ -48,6 +62,9 @@ class ServiceResource extends Resource
             'index' => ListServices::route('/'),
             'create' => CreateService::route('/create'),
             'edit' => EditService::route('/{record}/edit'),
+            'users' => ManageServiceUsers::route('/{record}/users'),
+            'connections' => ManageConnectionLogs::route('/{record}/connections'),
+            'traffic' => ManageTrafficLogs::route('/{record}/traffic'),
         ];
     }
 }

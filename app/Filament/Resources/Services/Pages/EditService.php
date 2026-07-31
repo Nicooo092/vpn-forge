@@ -6,13 +6,27 @@ use App\Filament\Resources\Services\ServiceResource;
 use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Jobs\Vpn\RemoveService;
 use App\Models\Service;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Contracts\Support\Htmlable;
 
 class EditService extends EditRecord
 {
     protected static string $resource = ServiceResource::class;
+
+    protected static ?string $title = 'Settings';
+
+    public static function getNavigationLabel(): string
+    {
+        return 'Settings';
+    }
+
+    public static function getNavigationIcon(): string|BackedEnum|Htmlable|null
+    {
+        return 'heroicon-o-cog-6-tooth';
+    }
 
     protected function getHeaderActions(): array
     {

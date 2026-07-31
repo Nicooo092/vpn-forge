@@ -6,10 +6,10 @@ use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
-use App\Filament\Resources\Services\Pages\EditService;
-use App\Filament\Resources\Services\RelationManagers\ConnectionLogsRelationManager;
-use App\Filament\Resources\Services\RelationManagers\ServiceUsersRelationManager;
-use App\Filament\Resources\Services\RelationManagers\TrafficLogsRelationManager;
+use App\Filament\Resources\Services\Pages\ManageConnectionLogs;
+use App\Filament\Resources\Services\Pages\ManageServiceUsers;
+use App\Filament\Resources\Services\Pages\ManageTrafficLogs;
+use App\Filament\Resources\Services\ServiceResource;
 use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Models\Service;
 use App\Models\ServiceUser;
@@ -48,10 +48,7 @@ class RelationManagersTest extends TestCase
 
     private function trafficTab(): Testable
     {
-        return Livewire::test(TrafficLogsRelationManager::class, [
-            'ownerRecord' => $this->service,
-            'pageClass' => EditService::class,
-        ]);
+        return Livewire::test(ManageTrafficLogs::class, ['record' => $this->service->getRouteKey()]);
     }
 
     private function addUser(string $name, ?bool $loggingOverride): ServiceUser
@@ -104,10 +101,7 @@ class RelationManagersTest extends TestCase
         $user = $this->addUser('phone', loggingOverride: false);
         $this->assertFalse($user->loggingEffective());
 
-        Livewire::test(ServiceUsersRelationManager::class, [
-            'ownerRecord' => $this->service,
-            'pageClass' => EditService::class,
-        ])
+        Livewire::test(ManageServiceUsers::class, ['record' => $this->service->getRouteKey()])
             ->callAction(TestAction::make('edit')->table($user), data: [
                 'name' => $user->name,
                 'tunnel_ip' => $user->tunnel_ip,
@@ -130,10 +124,7 @@ class RelationManagersTest extends TestCase
 
         $user = $this->addUser('phone', loggingOverride: null);
 
-        Livewire::test(ServiceUsersRelationManager::class, [
-            'ownerRecord' => $this->service,
-            'pageClass' => EditService::class,
-        ])
+        Livewire::test(ManageServiceUsers::class, ['record' => $this->service->getRouteKey()])
             ->callAction(TestAction::make('edit')->table($user), data: [
                 'name' => $user->name,
                 'tunnel_ip' => '10.60.0.251',
@@ -145,15 +136,26 @@ class RelationManagersTest extends TestCase
         Queue::assertPushed(ApplyServiceConfig::class);
     }
 
-    public function test_the_other_relation_managers_render(): void
+    public function test_every_record_page_renders(): void
     {
         $this->addUser('phone', loggingOverride: null);
 
-        foreach ([ServiceUsersRelationManager::class, ConnectionLogsRelationManager::class] as $manager) {
-            Livewire::test($manager, [
-                'ownerRecord' => $this->service,
-                'pageClass' => EditService::class,
-            ])->assertOk();
+        foreach ([ManageServiceUsers::class, ManageConnectionLogs::class, ManageTrafficLogs::class] as $page) {
+            Livewire::test($page, ['record' => $this->service->getRouteKey()])->assertOk();
+        }
+    }
+
+    /**
+     * Each concern is its own page now, so each needs its own route -- a
+     * missing one only shows up as a broken sub-navigation link.
+     */
+    public function test_each_concern_has_its_own_reachable_page(): void
+    {
+        $this->addUser('phone', loggingOverride: null);
+
+        foreach (['edit', 'users', 'connections', 'traffic'] as $page) {
+            $this->get(ServiceResource::getUrl($page, ['record' => $this->service]))
+                ->assertOk();
         }
     }
 }
