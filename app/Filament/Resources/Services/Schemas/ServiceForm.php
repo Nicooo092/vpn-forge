@@ -25,7 +25,16 @@ class ServiceForm
 {
     public static function configure(Schema $schema): Schema
     {
-        return $schema->components([
+        // One column at the root, deliberately. Filament otherwise imposes a
+        // two-column grid on a resource form (EditRecord::
+        // getDefaultActionSchemaResolver: `$schema->hasCustomColumns() ?
+        // $schema : $schema->columns(2)`), and every top-level component then
+        // silently takes half the page with nothing beside it. Declaring the
+        // column count here makes that explicit once, instead of needing a
+        // columnSpanFull() on each component and losing the page layout again
+        // the moment a new one is added -- which is exactly what happened when
+        // the section below was wrapped in a Grid.
+        return $schema->columns(1)->components([
             ToggleButtons::make('form_mode')
                 ->label('Configuration mode')
                 ->options([
@@ -42,8 +51,7 @@ class ServiceForm
                 // Not a column on services -- it only drives which fields are
                 // on screen, so it must never reach the model.
                 ->dehydrated(false)
-                ->helperText('Simple picks the network details for you. Advanced exposes every parameter the drivers actually read.')
-                ->columnSpanFull(),
+                ->helperText('Simple picks the network details for you. Advanced exposes every parameter the drivers actually read.'),
 
             // Split the row: what you edit on the left, what the service
             // actually is on the right. Previously the editable section took
@@ -150,7 +158,6 @@ class ServiceForm
             // the form default, so leaving them out keeps a WireGuard service
             // free of stray OpenVPN keys.
             Tabs::make('Advanced settings')
-                ->columnSpanFull()
                 ->dehydratedWhenHidden()
                 ->visible(fn (Get $get) => $get('form_mode') === 'advanced')
                 ->tabs([
