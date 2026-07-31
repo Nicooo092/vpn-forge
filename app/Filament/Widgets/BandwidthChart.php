@@ -14,6 +14,13 @@ class BandwidthChart extends ChartWidget
 
     protected ?string $pollingInterval = '30s';
 
+    // The dashboard grid is two columns wide, and a widget occupies one of
+    // them by default -- which left the chart squeezed into the left half with
+    // an empty column beside it.
+    protected int|string|array $columnSpan = 'full';
+
+    protected static ?int $sort = 2;
+
     /**
      * Largest byte value in the current window, kept from getData() so
      * getDescription() can talk about the same numbers without querying
