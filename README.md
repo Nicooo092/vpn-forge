@@ -1,12 +1,205 @@
+<div align="center">
+
 # vpn-forge
 
-A self-hosted panel for managing your own WireGuard and OpenVPN servers: multiple
-independent services, per-service users, detailed connection/bandwidth stats, and
-visibility into DNS-level domains visited and full plaintext HTTP traffic.
+**Run your own WireGuard and OpenVPN servers from one panel.**
 
-This is a **personal-use tool**: it's built for monitoring your own devices on VPN
-services you control, not for reselling or sharing access with other people without
-their knowledge. See [Privacy notes](#privacy-notes) below before turning on logging.
+Multiple independent services, users per service, connection and bandwidth stats,
+DNS-level visibility into what was visited, expiry dates, traffic allowances,
+per-service domain blocklists, and one-click backups.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PHP 8.3](https://img.shields.io/badge/PHP-8.3-777BB4.svg)](composer.json)
+[![Laravel 13](https://img.shields.io/badge/Laravel-13-FF2D20.svg)](composer.json)
+[![Filament 4](https://img.shields.io/badge/Filament-4-FDAE4B.svg)](composer.json)
+[![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420.svg)](#quick-start)
+[![WireGuard](https://img.shields.io/badge/WireGuard-88171A.svg)](#)
+[![OpenVPN](https://img.shields.io/badge/OpenVPN-EA7E20.svg)](#)
+
+**100% open source.** MIT licensed, no paid tier, no telemetry, no phone-home,
+no account required. Everything it does happens on your server.
+
+</div>
+
+---
+
+## Contents
+
+- [What you get](#what-you-get)
+- [How it works](#how-it-works)
+- [Quick start](#quick-start)
+- [Server sizing](#server-sizing)
+- [Ports to open](#ports-to-open)
+- [Manual installation](#manual-installation)
+- [Troubleshooting](#troubleshooting)
+- [Privacy notes](#privacy-notes)
+- [Scope](#scope)
+- [License](#license)
+
+---
+
+## What you get
+
+### Services
+
+| | |
+|---|---|
+| **Two protocols** | WireGuard and OpenVPN, as many independent instances as you want, each with its own interface, port and subnet |
+| **Simple or advanced setup** | Simple mode asks for a name, a protocol and an address, and derives the rest. Advanced exposes every parameter the drivers actually read |
+| **DNS provider per service** | Cloudflare (three filtering levels), AdGuard, AdGuard Family, Quad9, Google, OpenDNS, or any resolver you name -- including one on your own network |
+| **Domain blocklist** | Per service, subdomains included. Answered locally, so a blocked lookup never reaches an upstream resolver |
+| **Connection test** | Checks the interface, the listening socket, IP forwarding, the NAT rule, the resolver and the endpoint hostname, and says which of them it cannot determine rather than guessing |
+
+### Users
+
+| | |
+|---|---|
+| **Config in one click** | A downloadable `.conf` / `.ovpn`, or a QR code to scan straight into the WireGuard app |
+| **Expiry dates** | Access ends on its own. Suspended, not revoked, so pushing the date back turns them straight back on |
+| **Traffic allowances** | A limit in gigabytes, counted from a date you can move forward to reset it |
+| **Pause and resume** | Block someone without destroying their keys |
+| **Regenerate keys** | For a lost or stolen device: fresh key material, same person, same history. The old config stops working immediately |
+| **Labels** | Family, work, a client name -- filterable once there are more than a handful |
+| **A page each** | Limits, allowance, recent sessions and most-visited domains for one person, in one place |
+
+### Visibility
+
+| | |
+|---|---|
+| **Who is connected** | Live status, handshake times, per-user and per-service bandwidth over time |
+| **Full DNS lookups** | Not just the domain: the resolver that was asked, every answer that came back, the CNAME chain, and whether it was served from cache |
+| **Plaintext HTTP** | Full content of any non-HTTPS request. Rare in practice, and [read the privacy notes](#privacy-notes) |
+| **Change history** | Who edited what and when. Telemetry the poller writes on its own is excluded, and key material is never recorded |
+| **90-day retention** | Enforced daily, with export to a zip of CSVs at any time |
+
+### Operations
+
+| | |
+|---|---|
+| **One-click backups** | Database, WireGuard keys, the OpenVPN certificate authority and all service configuration in one archive |
+| **Admin accounts** | Managed from the panel, not over SSH |
+| **Survives reboots** | Interfaces, NAT rules, resolvers and workers all come back on their own |
+
+---
+
+## How it works
+
+### Three processes, deliberately unequal
+
+The panel you log into cannot touch the network stack. It can only ask.
+
+```mermaid
+flowchart TB
+    Browser["Your browser"]
+
+    subgraph Server["One Ubuntu server"]
+        direction TB
+
+        Panel["<b>Panel</b> · www-data<br/>Laravel + Filament<br/><i>no privileges at all</i>"]
+        Queue[("Job queue<br/>in the database")]
+        Worker["<b>Privileged worker</b> · vpnforge-worker<br/><i>CAP_NET_ADMIN only, never root</i>"]
+        Agent["<b>Capture agent</b> · vpnforge-agent<br/>Go, <i>cap_net_raw only</i>"]
+        DB[("MariaDB<br/>localhost only")]
+
+        Net["WireGuard / OpenVPN<br/>interfaces, NAT rules,<br/>PKI, dnsmasq"]
+    end
+
+    Browser -->|HTTPS| Panel
+    Panel -->|enqueues a job| Queue
+    Queue --> Worker
+    Worker -->|the only writer| Net
+    Agent -->|reads logs, sniffs tunnels| Net
+    Agent -->|own restricted db user| DB
+    Panel <--> DB
+    Worker --> DB
+```
+
+Why it is split this way: a web application reachable from the internet is the
+part most likely to be attacked, so it holds nothing worth stealing. Creating a
+tunnel needs `CAP_NET_ADMIN`; the worker has exactly that and nothing else.
+Sniffing a tunnel needs `cap_net_raw`; the agent has exactly that, cannot write
+anywhere except one table, and never listens on a socket.
+
+### Creating a service
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant Panel
+    participant Worker
+    participant System as WireGuard / OpenVPN
+    participant Resolver as dnsmasq
+
+    You->>Panel: fill in the form, save
+    Panel->>Panel: store the service, status = provisioning
+    Panel-)Worker: enqueue ProvisionService
+    Note over Panel,You: the page returns immediately
+
+    Worker->>System: generate keys or build the CA
+    Worker->>System: create the interface, add NAT
+    Worker->>Resolver: start a resolver bound to the tunnel gateway
+    Worker->>Panel: status = active
+
+    Note over Panel: the row updates on its own
+```
+
+Nothing blocks on the web request, so provisioning that takes ten seconds --
+building an OpenVPN certificate authority does -- never times out a page. If a
+step fails, the reason is stored and shown in the panel, with a retry button.
+
+### How a visited domain gets recorded
+
+```mermaid
+flowchart LR
+    Client["Client device"]
+    Resolver["dnsmasq<br/>bound to 10.x.0.1"]
+    Upstream["Upstream resolver<br/>Cloudflare, AdGuard, ..."]
+    Log["/var/log/vpnforge/<br/>dns-wg0.log"]
+    Agent["Capture agent"]
+    DB[("traffic_logs")]
+
+    Client -->|1 query| Resolver
+    Resolver -->|2 forwarded| Upstream
+    Upstream -->|3 answer| Resolver
+    Resolver -->|4 answer| Client
+    Resolver -.->|writes all three| Log
+    Log --> Agent
+    Agent -->|one row per lookup| DB
+```
+
+The client is pointed at the service's own resolver by the config the panel
+generates -- that is what makes any of this visible. All three legs are
+correlated back into a single row: what was asked, who was asked, and what came
+back.
+
+**This is not decryption.** It sees the name that was looked up, never the
+contents of the connection. A client using DNS-over-HTTPS bypasses it entirely,
+and is meant to.
+
+### Where things live
+
+```mermaid
+flowchart TB
+    subgraph W["vpnforge-worker writes"]
+        A["/etc/wireguard/"]
+        B["/etc/openvpn/vpnforge/<br/>certificate authority"]
+        C["/etc/vpnforge/dnsmasq/"]
+    end
+
+    subgraph S["shared, one group each way"]
+        D["/var/log/vpnforge/<br/>worker writes · agent reads"]
+        E["/var/backups/vpnforge/<br/>worker writes · panel reads"]
+    end
+
+    subgraph N["nobody but root"]
+        F["MariaDB<br/>bound to 127.0.0.1"]
+    end
+```
+
+Each account can reach what it needs and nothing else. Where two genuinely share
+a directory, one small group covers exactly that directory.
+
+---
 
 ## Quick start
 
@@ -16,80 +209,87 @@ Run as root on a fresh **Ubuntu 24.04 LTS** server:
 curl -fsSL https://raw.githubusercontent.com/Nicooo092/vpn-forge/main/install.sh -o /tmp/vpnforge-install.sh && sudo bash /tmp/vpnforge-install.sh
 ```
 
-You'll be asked for a domain (or IP), an admin account, and whether to enable
-Let's Encrypt SSL. Everything else -- nginx, MariaDB, PHP, WireGuard, OpenVPN,
-the privileged worker, the capture agent -- is installed and started automatically.
+You are asked for a domain (or IP), an admin account, and whether to enable
+Let's Encrypt. Everything else -- nginx, MariaDB, PHP, WireGuard, OpenVPN, the
+privileged worker, the capture agent -- is installed and started for you.
 
-Only Ubuntu 24.04 is supported for now (see [Scope](#scope) below for why).
+Then open the panel, create a service, add a user, and scan the QR code.
 
-## Table of contents
+---
 
-- [What this does](#what-this-does)
-- [Architecture](#architecture)
-- [Ports to open](#ports-to-open)
-- [Manual installation](#manual-installation)
-- [Troubleshooting](#troubleshooting)
-- [Privacy notes](#privacy-notes)
-- [Scope](#scope)
-- [License](#license)
+## Server sizing
 
-## What this does
+Three things drive what you need, in this order.
 
-- **Services**: create as many independent WireGuard or OpenVPN instances as you
-  want, each with its own interface, port, and subnet.
-- **Users per service**: add/revoke users from the panel; each gets a single
-  downloadable config file (`.conf` or `.ovpn`).
-- **Logging**: a per-service default (on/off), overridable per user. Covers
-  connection metadata, DNS-visible domains (works for HTTPS sites too, since it's
-  based on the DNS query, not decrypted traffic), and full content of any plaintext
-  HTTP requests.
-- **Stats**: bandwidth-over-time charts, connection history, live status.
-- **Logs are capped at 90 days** and can be exported (as a zip of CSVs) at any time,
-  per-service or in full, before they age out.
+**Disk, and it is mostly the DNS log.** Every lookup is a row, and a person
+browsing generates roughly 3,000-8,000 a day. At about 300 bytes a row with
+indexes, held for 90 days, that is around **8 GB per 50 users**. Turn logging off
+and this collapses to almost nothing.
 
-## Architecture
+**CPU, and only under load.** WireGuard runs in the kernel and will saturate a
+gigabit link on one modern core. OpenVPN runs in userspace and is
+**single-threaded per instance** -- one OpenVPN service will not exceed roughly
+200-400 Mbit/s no matter how many cores you give it. Above that, split users
+across several OpenVPN services, which is exactly what running multiple
+independent services is for.
 
-Three pieces run on one server:
+**RAM, mostly MariaDB.** The panel itself is idle unless someone is looking at it.
 
-1. **The panel** (Laravel + Filament, `www-data`, unprivileged) -- the web UI. It
-   never touches the network stack directly.
-2. **A privileged queue worker** (`vpnforge-worker`, a dedicated non-root system
-   user holding only `CAP_NET_ADMIN` via systemd `AmbientCapabilities=`) -- the
-   only process that writes WireGuard/OpenVPN config, calls `wg`/`easyrsa`, and
-   manages the NAT rules. The web process only ever enqueues jobs for it.
-3. **A capture agent** (a small Go binary, `vpnforge-agent`, granted
-   `cap_net_raw`/`cap_net_admin` via `setcap` -- not root) -- watches each
-   service's dnsmasq log for DNS queries and sniffs each service's tunnel
-   interface for plaintext HTTP, writing rows straight into the same database the
-   panel reads from, using its own separate, minimally-privileged database user.
+### Minimum and recommended
 
-Every protocol-specific piece (WireGuard, OpenVPN) sits behind one shared driver
-interface, so another protocol could be added later without touching the panel
-or job layer.
+Read each cell as **minimum → recommended**.
+
+| Scale | Users | vCPU | RAM | Disk |
+|---|---|---|---|---|
+| **Family** | up to 10 | 1 → 2 | 1 → 2 GB | 20 → 40 GB |
+| **Small team** | 10-50 | 2 → 2 | 2 → 4 GB | 60 → 100 GB |
+| **Business** | 50-200 | 4 → 4 | 4 → 8 GB | 160 → 300 GB |
+| **Large** | 200+ | 8 → 8+ | 8 → 16 GB | 400 → 500+ GB |
+
+The minimum runs. The recommendation leaves headroom for a busy day, for log
+growth, and for the database not to thrash. Disk assumes DNS logging on for
+everyone at the full 90-day retention -- turning it off, or shortening
+retention, is the usual first lever if you are tight.
+
+### A few notes worth knowing before you buy
+
+- **Not OpenVZ or LXC.** WireGuard needs the kernel module. Use KVM or bare metal.
+- **SSD, not spinning disk**, from 50 users up. The traffic log is
+  write-heavy and constant.
+- **Bandwidth allowance matters more than the server.** Every byte a client sends
+  crosses your server twice. 50 people at moderate use will move several
+  terabytes a month; check whether your host charges for that.
+- **AES-NI** on the CPU if you use OpenVPN. Any VPS from the last decade has it.
+- **200+ users on OpenVPN**: plan several OpenVPN services rather than one large
+  one, for the single-threading reason above. WireGuard has no such limit.
+
+---
 
 ## Ports to open
 
 | Port | Protocol | What |
 |---|---|---|
-| 22 | TCP | SSH (already there, listed for completeness) |
-| 80 | TCP | The panel over HTTP, or transiently for Let's Encrypt if you use HTTPS |
-| 443 | TCP | The panel over HTTPS (only if you enabled SSL) |
-| *(per service)* | UDP or TCP | Whatever port you pick when creating each VPN service -- shown in the panel, and reminded there every time |
+| 22 | TCP | SSH |
+| 80 | TCP | The panel over HTTP, or briefly for Let's Encrypt if you use HTTPS |
+| 443 | TCP | The panel over HTTPS |
+| *per service* | UDP or TCP | Whatever port you choose when creating each VPN service |
 
-**Not exposed, and should never be opened externally:** each service's dnsmasq
-instance (bound only to that service's internal tunnel address), the capture
-agent (purely passive, no listener at all), and MariaDB (bound to localhost only).
+Services are created after installation, so the installer cannot know their ports
+in advance -- the panel reminds you every time you create one, and the connection
+test tells you when everything on the server is right and the firewall is the only
+thing left.
 
-Since services are created *after* installation, from inside the panel, this
-installer has no way to know their ports in advance -- the panel reminds you of
-the port to open every time you create one.
+**Never expose:** each service's dnsmasq instance (bound to the tunnel address
+only), the capture agent (passive, no listener at all), or MariaDB (localhost).
+
+---
 
 ## Manual installation
 
-If you'd rather run each step yourself instead of the one-line installer, here's
-everything it does, in order, for **Ubuntu 24.04 LTS**:
+Everything the one-line installer does, in order, for **Ubuntu 24.04 LTS**.
 
-### 1. Packages
+<details>
+<summary><b>1. Packages</b></summary>
 
 ```bash
 apt-get update
@@ -108,25 +308,28 @@ echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-vpnforge.conf
 sysctl -p /etc/sysctl.d/99-vpnforge.conf
 ```
 
-### 2. Database
+</details>
 
-Pick a strong password for each of these, then:
+<details>
+<summary><b>2. Database</b></summary>
 
 ```sql
 CREATE DATABASE vpnforge;
 CREATE USER 'vpnforge'@'127.0.0.1' IDENTIFIED BY 'your-app-db-password';
 GRANT ALL PRIVILEGES ON vpnforge.* TO 'vpnforge'@'127.0.0.1';
 
--- A second, much more restricted user for the capture agent -- it should
--- never be able to touch anything but traffic_logs and read-only lookups.
+-- A second, far more restricted user for the capture agent: it should never be
+-- able to touch anything but traffic_logs and a couple of read-only lookups.
 CREATE USER 'vpnforge_agent'@'127.0.0.1' IDENTIFIED BY 'your-agent-db-password';
 FLUSH PRIVILEGES;
 ```
 
-(The grants on `traffic_logs`/`services`/`service_users` for `vpnforge_agent` are
-applied in step 3, after migrations create those tables.)
+Its grants are applied in step 3, once migrations have created the tables.
 
-### 3. The application
+</details>
+
+<details>
+<summary><b>3. The application</b></summary>
 
 ```bash
 git clone https://github.com/Nicooo092/vpn-forge.git /var/www/vpnforge
@@ -136,9 +339,11 @@ cp .env.example .env
 php artisan key:generate --force -n
 ```
 
-Edit `.env` and set (or use `php artisan config:clear` after):
+Edit `.env`:
 
-```
+```ini
+APP_ENV=production
+APP_DEBUG=false
 APP_URL=https://your-domain-or-ip
 APP_TIMEZONE=Your/Timezone
 DB_CONNECTION=mariadb
@@ -152,7 +357,10 @@ SESSION_DRIVER=database
 QUEUE_CONNECTION=database
 ```
 
-Then:
+> `APP_ENV` and `APP_DEBUG` are not cosmetic. `.env.example` ships Laravel's
+> development defaults, and leaving them means a public server prints a full
+> stack trace -- file paths, environment, database password -- on any unhandled
+> error.
 
 ```bash
 php artisan migrate --force
@@ -167,40 +375,48 @@ php artisan make:filament-user --name=admin --email=you@example.com --password='
 chmod -R 755 storage/* bootstrap/cache/
 chown -R www-data:www-data /var/www/vpnforge
 
-# The scheduler needs to run every minute as www-data:
+# The scheduler runs every minute as www-data: it polls status, enforces expiry
+# dates and traffic allowances, and prunes logs.
 ( crontab -u www-data -l 2>/dev/null | grep -v 'schedule:run'; \
   echo '* * * * * php /var/www/vpnforge/artisan schedule:run >> /dev/null 2>&1' ) | crontab -u www-data -
 ```
 
-### 4. nginx (+ SSL)
+</details>
 
-Use `installer/lib/webserver_setup.sh` in this repo as the exact vhost template
-(substitute your domain/IP and `/var/www/vpnforge`), then:
+<details>
+<summary><b>4. nginx and SSL</b></summary>
+
+Use `installer/lib/webserver_setup.sh` as the vhost template (substituting your
+domain and `/var/www/vpnforge`), then:
 
 ```bash
 ln -sf /etc/nginx/sites-available/vpnforge.conf /etc/nginx/sites-enabled/vpnforge.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
-# Only if you have a real domain (not a bare IP):
+# Only with a real domain, not a bare IP:
 apt-get install -y certbot python3-certbot-nginx
 certbot --nginx -d your-domain --agree-tos -m you@example.com --redirect
 ```
 
-### 5. Privileged worker
+</details>
+
+<details>
+<summary><b>5. Privileged worker</b></summary>
 
 ```bash
 useradd --system --no-create-home --shell /usr/sbin/nologin vpnforge-worker
 
-mkdir -p /etc/wireguard /etc/openvpn/vpnforge /etc/openvpn/server /etc/vpnforge/dnsmasq /var/log/vpnforge
+mkdir -p /etc/wireguard /etc/openvpn/vpnforge /etc/openvpn/server \
+         /etc/vpnforge/dnsmasq /var/log/vpnforge
 
-# /etc/wireguard and /etc/openvpn/vpnforge hold real secrets; /etc/openvpn/server
+# /etc/wireguard and /etc/openvpn/vpnforge hold real secrets. /etc/openvpn/server
 # is where Ubuntu's packaged openvpn-server@.service hardcodes its
-# WorkingDirectory + a relative --config, so server.conf has to live there too.
-# 770 (not 750): the worker doesn't just read these, it creates files/
+# WorkingDirectory and a relative --config, so server.conf has to live there too.
+#
+# 770, not 750: the worker does not merely read these, it creates files and
 # subdirectories in them, which needs the group write bit. Setgid so anything
-# created inside later keeps the right group regardless of which identity
-# creates it.
+# created inside keeps the right group whoever creates it.
 chgrp -R vpnforge-worker /etc/wireguard /etc/openvpn/vpnforge
 chmod -R 770 /etc/wireguard /etc/openvpn/vpnforge
 chmod g+s /etc/wireguard /etc/openvpn/vpnforge
@@ -208,47 +424,76 @@ chgrp vpnforge-worker /etc/openvpn/server /etc/vpnforge/dnsmasq
 chmod 770 /etc/openvpn/server /etc/vpnforge/dnsmasq
 chmod g+s /etc/openvpn/server /etc/vpnforge/dnsmasq
 
-# /etc/vpnforge itself and /var/log/vpnforge stay 755 (not 770): vpnforge-agent
-# (a separate, unrelated group) needs to traverse both to reach agent.yml and
-# each service's DNS log file -- a directory's own permissions gate traversal
-# into it regardless of what's inside, so the worker keeps write access via the
-# group while "other" still gets read+traverse.
-chmod 755 /etc/vpnforge /var/log/vpnforge
+# /etc/vpnforge itself stays 755: vpnforge-agent, a separate and unrelated
+# account, has to traverse it to reach agent.yml.
+chmod 755 /etc/vpnforge
+
+# /var/log/vpnforge is 2775, not 755: the worker CREATES each service's DNS log
+# file here, which needs group write. 755 gives the group read only, and the
+# result is a provisioning failure with "Permission denied", a service stuck in
+# error, and -- because only active services are polled -- an empty panel with no
+# telemetry at all. "Other" keeps r-x so the agent can traverse in and open the
+# individual log files, each granted to it separately.
 chgrp vpnforge-worker /var/log/vpnforge
+chmod 2775 /var/log/vpnforge
 ```
 
-`systemctl enable`/`disable`/`restart` on the WireGuard/OpenVPN/dnsmasq systemd
-units goes over D-Bus to systemd, which polkit -- not `CAP_NET_ADMIN` -- gates;
-without a rule granting it, every provisioning job fails with "Interactive
-authentication required" (and `NoNewPrivileges=yes` below rules out `sudo` as a
-fix, since sudo itself needs a new-privilege execve to elevate):
+`systemctl enable`/`disable`/`restart` on the WireGuard, OpenVPN and dnsmasq units
+goes over D-Bus to systemd, which **polkit** gates -- not `CAP_NET_ADMIN`. Without
+a rule, every provisioning job fails with "Interactive authentication required",
+and `NoNewPrivileges=yes` on the worker rules out `sudo` as a workaround:
 
 ```bash
 mkdir -p /etc/polkit-1/rules.d
 cp installer/templates/polkit/vpnforge-worker.rules /etc/polkit-1/rules.d/49-vpnforge-worker.rules
 ```
 
+Two directories are genuinely shared between the panel and the worker, so one
+group covers exactly those:
+
+```bash
+groupadd -f vpnforge-shared
+usermod -aG vpnforge-shared vpnforge-worker
+usermod -aG vpnforge-shared www-data
+
+# Backups: written by the worker (the only account that can read the CA),
+# downloaded through the panel. 2770 -- the contents are every private key here.
+mkdir -p /var/backups/vpnforge
+chown root:vpnforge-shared /var/backups/vpnforge
+chmod 2770 /var/backups/vpnforge
+
+# Laravel's log: both processes write it. Without this the worker cannot open
+# it, and since Monolog throws when it cannot log, one failed job takes the
+# whole worker down instead of being recorded.
+chgrp -R vpnforge-shared /var/www/vpnforge/storage/logs
+chmod 2775 /var/www/vpnforge/storage/logs
+```
+
 Copy `installer/templates/systemd/vpnforge-worker.service.tpl` to
-`/etc/systemd/system/vpnforge-worker.service` (substitute `/var/www/vpnforge` for
-`__APP_DIR__`), then:
+`/etc/systemd/system/vpnforge-worker.service` (substituting `/var/www/vpnforge`
+for `__APP_DIR__`), then:
 
 ```bash
 systemctl daemon-reload
 systemctl enable --now vpnforge-worker
 ```
 
-### 6. Capture agent
+</details>
+
+<details>
+<summary><b>6. Capture agent</b></summary>
 
 ```bash
 cd /var/www/vpnforge/agent
-go build -o /usr/local/bin/vpnforge-agent .
+go build -buildvcs=false -o /usr/local/bin/vpnforge-agent .
 setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/vpnforge-agent
 
 useradd --system --no-create-home --shell /usr/sbin/nologin vpnforge-agent
-# Not chgrp'd to vpnforge-agent -- /var/log/vpnforge is already 755 (see
-# step 5), which is enough for this separate, unrelated user to traverse it
-# and open each service's DNS log file (each already 640 to vpnforge-agent
-# specifically, via that unit's ExecStartPost).
+
+# Do not chgrp /var/log/vpnforge to this account: that takes the worker's write
+# access away and provisioning stops working. The agent only needs to traverse
+# the directory -- each log file is granted to it individually, 640 and group
+# vpnforge-agent, by the dnsmasq unit's ExecStartPost.
 
 cat > /etc/vpnforge/agent.yml <<EOF
 database:
@@ -274,85 +519,153 @@ systemctl daemon-reload
 systemctl enable --now vpnforge-agent
 ```
 
-(The per-service `vpnforge-dnsmasq@<interface>` instances are started
-automatically by the panel when you create a Service -- nothing more to do here.)
+Per-service `vpnforge-dnsmasq@<interface>` instances are started by the panel when
+you create a service -- nothing more to do here.
 
-### 7. First login
+</details>
 
-Visit your panel URL, log in with the admin account you created, and create your
-first Service. The port it needs is shown right there in the form.
+<details>
+<summary><b>7. First login</b></summary>
+
+Open the panel, sign in, and create your first service. The port to open is shown
+in the form, and **Test connection** on the service row will tell you what is and
+is not working once it exists.
+
+</details>
+
+---
 
 ## Troubleshooting
 
-**A Service is stuck "Provisioning" or shows an error, and nothing seems to
-happen.** Job dispatch (fast, from the web request) is decoupled from execution
-(async, on the worker). Check the worker is actually running:
-`systemctl status vpnforge-worker`. If it's not, `journalctl -u vpnforge-worker
--n 50` will show why.
+**Start with Test connection** on the service row. It checks the interface, the
+listening socket, IP forwarding, the NAT rule, the resolver and the endpoint
+hostname, and marks anything it cannot determine as unknown rather than failed.
+If every line passes and clients still cannot connect, the remaining suspect is
+your cloud provider's firewall, which is invisible from inside the machine.
 
-**A service provisions but no internet flows through the tunnel.** Almost always
-one of: `sysctl net.ipv4.ip_forward` isn't `1`, or the NAT rule is using the wrong
-egress interface (check with `ip route show default` -- it isn't always `eth0`;
-edit the Service's Advanced tab if so).
+<details>
+<summary><b>A service is stuck provisioning, or shows an error</b></summary>
 
-**Two services won't both start.** Their ports collide. WireGuard and OpenVPN (UDP)
-share one port namespace at the OS level -- the panel validates this, but if you
-edited the database directly, check with `ss -ulnp` / `ss -tlnp`.
+Dispatch is decoupled from execution, so check the worker is running:
+`systemctl status vpnforge-worker`, then `journalctl -u vpnforge-worker -n 50`.
+The failure reason is also shown under the status badge in the panel, with a
+retry button.
 
-**nginx returns a 502.** PHP-FPM's socket path can differ across setups; check
-`ls /run/php/` matches what's in the nginx vhost (`php8.3-fpm.sock`).
+</details>
 
-**WireGuard interface won't come up.** Some minimal/OpenVZ-style VPS hosts can't
-load the WireGuard kernel module at all. This installer assumes a KVM or
-bare-metal host.
+<details>
+<summary><b>The tunnel connects but no internet flows</b></summary>
 
-**No DNS logs are showing up for a service, ever.** Either the client is using
-its own hardcoded DNS resolver instead of the one pushed to it, or is using
-DNS-over-HTTPS/TLS -- both are silent, expected gaps (see
-[Privacy notes](#privacy-notes)). Also check the per-service dnsmasq instance is
-actually running: `systemctl status vpnforge-dnsmasq@<interface>`.
+Almost always `sysctl net.ipv4.ip_forward` is not `1`, or the NAT rule names the
+wrong egress interface. Check `ip route show default` -- it is not always `eth0` --
+and correct it in the service's Network tab.
 
-**No HTTP logs are showing up, ever.** Check `setcap -v cap_net_raw,cap_net_admin=eip
-/usr/local/bin/vpnforge-agent` reports the capability is actually set (some
-filesystems strip extended attributes, silently dropping it), and check
-`journalctl -u vpnforge-agent` for errors opening the interface.
+</details>
 
-**A revoked OpenVPN user stays connected for a while.** Expected: the certificate
-revocation list is only re-checked on new connections or TLS renegotiation
-(up to an hour later by default), not continuously. This isn't a bug.
+<details>
+<summary><b>The tunnel connects but nothing resolves</b></summary>
 
-**Logs seem to be missing / arriving at the wrong time.** Check both the panel's
-server and the capture agent agree on the clock: `timedatectl` should show NTP
-synchronized. The two write to the same tables from different processes, and
-correlate by timestamp.
+The resolver has no upstream, or the client is not using it. Check
+`systemctl status vpnforge-dnsmasq@<interface>` and confirm the service's upstream
+DNS list is not empty. Then check the client is using the config this panel
+generates: an older download may name a different resolver.
+
+</details>
+
+<details>
+<summary><b>Two services will not both start</b></summary>
+
+Their ports collide. WireGuard and OpenVPN over UDP share one port namespace at
+the OS level. Check with `ss -ulnp` and `ss -tlnp`.
+
+</details>
+
+<details>
+<summary><b>No DNS logs, ever</b></summary>
+
+In order of likelihood: logging is switched off for that user (the traffic log
+page names them when it is), the client is using its own resolver or
+DNS-over-HTTPS, or the per-service dnsmasq instance is not running.
+
+</details>
+
+<details>
+<summary><b>No HTTP logs, ever</b></summary>
+
+Check the capability actually stuck: `setcap -v cap_net_raw,cap_net_admin=eip
+/usr/local/bin/vpnforge-agent`. Some filesystems strip extended attributes
+silently. Then `journalctl -u vpnforge-agent`.
+
+</details>
+
+<details>
+<summary><b>A revoked OpenVPN user stays connected</b></summary>
+
+Expected. The revocation list is re-read on new connections and TLS
+renegotiation, up to an hour apart by default -- not continuously. Regenerating
+keys cuts the live session immediately; revoking does too, but only if the server
+is running.
+
+</details>
+
+<details>
+<summary><b>nginx returns 502</b></summary>
+
+The PHP-FPM socket path differs between setups. Check `ls /run/php/` matches the
+vhost (`php8.3-fpm.sock`).
+
+</details>
+
+<details>
+<summary><b>The WireGuard interface will not come up</b></summary>
+
+Some minimal VPS hosts (OpenVZ, some LXC) cannot load the WireGuard kernel
+module. This needs KVM or bare metal.
+
+</details>
+
+<details>
+<summary><b>Logs arrive at the wrong time</b></summary>
+
+The panel and the agent write to the same tables from different processes and
+correlate by timestamp. `timedatectl` should report NTP synchronised.
+
+</details>
+
+---
 
 ## Privacy notes
 
-This panel can log, per user (on by default per-service, overridable per user):
+This panel can record, per user -- on by default per service, overridable per
+user, and shown plainly in the interface:
 
-- Connection metadata (when, from where, how much data).
-- Every domain visited, including over HTTPS -- this uses DNS query visibility,
-  not decryption, so it's silently blind to clients using DNS-over-HTTPS/TLS or a
-  hardcoded external resolver.
-- The **full content** (headers and body) of any plaintext (non-HTTPS) HTTP
-  traffic. If a site you visit isn't using HTTPS, whatever you send it --
-  including passwords, if that site is careless enough to accept them in
-  plaintext -- is logged in full.
+- Connection metadata: when, from where, how much.
+- Every domain looked up, including for HTTPS sites. This works through DNS
+  visibility, not decryption, so it is silently blind to clients using
+  DNS-over-HTTPS or a hardcoded external resolver.
+- The **full content** of any plaintext HTTP request. If a site is not using
+  HTTPS, whatever is sent to it -- including a password, if that site is careless
+  enough to accept one in the clear -- is recorded in full.
 
-There is no TLS interception/MITM here, and none is planned: it would need a
-certificate installed on every client device, breaks apps that use certificate
-pinning, and turns a personal monitoring tool into something that looks a lot
-like traffic interception if ever pointed at anyone other than your own devices.
-Point this at infrastructure and devices you own, not at other people's traffic,
-and turn per-user logging off for anyone (or anything) where you don't want it.
+**There is no TLS interception here, and none is planned.** It would need a
+certificate installed on every device, break anything using certificate pinning,
+and turn a self-hosted monitoring tool into something much harder to justify.
+
+Point this at devices and infrastructure you own. If other people use a service
+you run, tell them what is recorded, and switch logging off for anyone it should
+not cover. The change history records who turned it on.
+
+---
 
 ## Scope
 
-This is a personal project, not a hosting platform. Deliberately out of scope for
-now: any OS other than Ubuntu 24.04 LTS, a self-service portal for VPN users
-(the panel is admin-only), running Panel and VPN services across multiple
-machines, and an uninstaller.
+A self-hosted tool, not a hosting platform. Deliberately out of scope for now:
+any OS other than Ubuntu 24.04 LTS, a self-service portal for end users (the
+panel is admin-only), spreading services across several machines, and an
+uninstaller.
+
+---
 
 ## License
 
-MIT.
+[MIT](LICENSE). Use it, change it, run it commercially, fork it. No warranty.
