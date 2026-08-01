@@ -4,6 +4,7 @@ namespace App\Jobs\Vpn;
 
 use App\Models\Service;
 use App\Services\Vpn\DnsmasqManager;
+use App\Services\Vpn\TrafficShaper;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -25,9 +26,12 @@ class RemoveService implements ShouldQueue
         $this->onQueue('system');
     }
 
-    public function handle(DnsmasqManager $dnsmasq): void
+    public function handle(DnsmasqManager $dnsmasq, TrafficShaper $shaper): void
     {
         $this->service->driver()->removeService($this->service);
+        // Drop any tc qdiscs and the IFB device before the interface goes for
+        // good, so a re-created service on the same name starts clean.
+        $shaper->clear($this->service);
         $dnsmasq->deprovision($this->service);
         $this->service->delete();
     }

@@ -40,4 +40,20 @@ return [
         'branch' => env('VPNFORGE_BRANCH', 'main'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Per-user traffic shaping
+    |--------------------------------------------------------------------------
+    |
+    | The ceiling (in Mbit/s) used for traffic that is NOT capped -- the top of
+    | the HTB tree. Set it to this server's real uplink so unshaped users are
+    | not needlessly limited and shaped users are enforced against a truthful
+    | link speed.
+    |
+    */
+
+    'shaping' => [
+        'link_mbit' => (int) env('VPNFORGE_LINK_MBIT', 1000),
+    ],
+
 ];

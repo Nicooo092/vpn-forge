@@ -35,4 +35,12 @@ install_packages() {
   output "Enabling IP forwarding..."
   echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/99-vpnforge.conf
   sysctl -p /etc/sysctl.d/99-vpnforge.conf >/dev/null
+
+  # Per-user upload shaping mirrors a tunnel's ingress onto an IFB device
+  # (see App\Services\Vpn\TrafficShaper). The privileged worker can create
+  # those devices with CAP_NET_ADMIN but cannot load a kernel module, so the
+  # ifb module is loaded here and at every boot.
+  output "Loading the ifb kernel module for traffic shaping..."
+  echo 'ifb' >/etc/modules-load.d/vpnforge-ifb.conf
+  modprobe ifb 2>/dev/null || true
 }

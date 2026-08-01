@@ -40,6 +40,10 @@
                         <dd class="font-mono">{{ implode(', ', $user->dns_override) }}</dd>
                     </div>
                 @endif
+                <div>
+                    <dt class="text-gray-500 dark:text-gray-400">Speed limit</dt>
+                    <dd>{{ $user->rate_limit_kbps ? round($user->rate_limit_kbps / 1000, 2).' Mbit/s (down + up)' : 'unlimited' }}</dd>
+                </div>
                 @if ($user->labels)
                     <div>
                         <dt class="text-gray-500 dark:text-gray-400">Labels</dt>

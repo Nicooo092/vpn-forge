@@ -156,18 +156,33 @@ class ServiceUsersTable
                         })
                         ->mutateFormDataUsing(self::normaliseUserData(...))
                         ->after(function (ServiceUser $record): void {
-                            // Both of these change what a client config should
-                            // contain (its address, its resolver), so the
-                            // service has to be re-applied and every config
-                            // re-rendered. A logging change needs nothing: the
-                            // capture agent re-reads the user table on its own.
-                            if ($record->wasChanged('tunnel_ip') || $record->wasChanged('dns_override')) {
-                                ApplyServiceConfig::dispatch($record->service);
+                            // Tunnel address and DNS change what a client config
+                            // should contain, so those need re-applying AND a
+                            // fresh download. A speed limit is enforced entirely
+                            // server-side, so it re-applies but the config the
+                            // user already has stays valid. A logging change
+                            // needs nothing: the capture agent re-reads the user
+                            // table on its own.
+                            $configChanged = $record->wasChanged('tunnel_ip') || $record->wasChanged('dns_override');
+                            $shapingChanged = $record->wasChanged('rate_limit_kbps');
 
+                            if (! $configChanged && ! $shapingChanged) {
+                                return;
+                            }
+
+                            ApplyServiceConfig::dispatch($record->service);
+
+                            if ($configChanged) {
                                 Notification::make()
                                     ->title($record->wasChanged('tunnel_ip') ? 'Tunnel address changed' : 'DNS changed')
                                     ->body('Re-applying in the background. Download this user\'s config again -- the previous one is now out of date.')
                                     ->warning()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->title('Speed limit updated')
+                                    ->body('Applying on the server in the background. The user keeps their current config.')
+                                    ->success()
                                     ->send();
                             }
                         }),

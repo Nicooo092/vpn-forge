@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Services\Vpn\DnsmasqManager;
+use App\Services\Vpn\TrafficShaper;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -23,7 +24,7 @@ class ApplyServiceConfig implements ShouldQueue
         $this->onQueue('system');
     }
 
-    public function handle(DnsmasqManager $dnsmasq): void
+    public function handle(DnsmasqManager $dnsmasq, TrafficShaper $shaper): void
     {
         try {
             $this->service->driver()->applyServiceConfig($this->service);
@@ -47,6 +48,11 @@ class ApplyServiceConfig implements ShouldQueue
                 ->where('status', ServiceUserStatus::Active)
                 ->get()
                 ->each(fn ($user) => $user->refreshRenderedClientConfig());
+
+            // Bring per-user speed limits into line with the current user set.
+            // With no user limited this is a no-op teardown, so an unshaped
+            // service is never touched.
+            $shaper->apply($this->service);
         } catch (Throwable $e) {
             $this->service->forceFill([
                 'status' => ServiceStatus::Error,

@@ -60,6 +60,17 @@ class ServiceUserForm
                     ? 'Leave empty to use the service resolver. Set, this user\'s device is pointed straight at these resolvers instead -- so their DNS lookups stop being recorded in the traffic log.'
                     : 'Leave empty to use the service resolver. Set, these resolvers are pushed to this user\'s device alongside the service one (their lookups are still recorded).'),
 
+            // Stored as kbit/s so the tc rule can use it directly; shown in
+            // Mbit/s because nobody wants to type 5000.
+            TextInput::make('rate_limit_kbps')
+                ->label('Speed limit (Mbit/s)')
+                ->numeric()
+                ->minValue(0.1)
+                ->step(0.1)
+                ->formatStateUsing(fn (?int $state) => $state === null ? null : round($state / 1000, 2))
+                ->dehydrateStateUsing(fn (?string $state) => filled($state) ? (int) round((float) $state * 1000) : null)
+                ->helperText('Left empty, no limit. Otherwise caps this user\'s download and upload at this speed. Applied on the server within a few seconds -- no need to re-download the config.'),
+
             DateTimePicker::make('expires_at')
                 ->label('Access expires')
                 ->seconds(false)
