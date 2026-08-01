@@ -542,19 +542,45 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         foreach ($service->serviceUsers()->whereNotNull('openvpn_common_name')->get() as $user) {
             $path = "{$ccdDir}/{$user->openvpn_common_name}";
+            $lines = $this->clientConfigDirLines($user);
 
-            if ($user->status === ServiceUserStatus::Suspended) {
-                File::put($path, "disable\n");
+            if ($lines === []) {
+                File::delete($path);
 
                 continue;
             }
 
-            File::delete($path);
+            File::put($path, implode("\n", $lines)."\n");
         }
 
         // Anyone already connected keeps their session until it renegotiates,
         // so cut it now rather than leaving a suspended user online.
         $this->disconnectSuspended($service);
+    }
+
+    /**
+     * The per-user client-config-dir directives, if any. A suspended user is
+     * disabled outright -- nothing else about them matters while they are off.
+     * Otherwise a DNS override is pushed to just this client.
+     *
+     * Validated to bare IPs at the sink: the line lands in a config OpenVPN
+     * reads as root. Unlike WireGuard, OpenVPN has no per-client way to
+     * un-push the service's own resolver, so this is pushed in addition to it
+     * rather than replacing it -- the user's device receives both, and their
+     * lookups still reach this panel's resolver and stay logged.
+     *
+     * @return list<string>
+     */
+    private function clientConfigDirLines(ServiceUser $user): array
+    {
+        if ($user->status === ServiceUserStatus::Suspended) {
+            return ['disable'];
+        }
+
+        return array_map(
+            fn (string $ip) => "push \"dhcp-option DNS {$ip}\"",
+            NetworkInput::filterUpstreams($user->dns_override ?? []),
+        );
     }
 
     private function disconnectSuspended(Service $service): void

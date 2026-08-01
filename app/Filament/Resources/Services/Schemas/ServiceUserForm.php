@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Services\Schemas;
 
+use App\Enums\VpnProtocol;
 use App\Models\Service;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -48,6 +49,16 @@ class ServiceUserForm
                 ->label('Labels')
                 ->placeholder('family, work, client-x')
                 ->helperText('For finding and filtering people once there are more than a handful.'),
+
+            TagsInput::make('dns_override')
+                ->label('DNS for this user')
+                ->placeholder('1.1.1.1, 9.9.9.9')
+                // Each entry is checked here for the form, and again at the
+                // driver sink where it reaches a device/server config.
+                ->nestedRecursiveRules(['ipv4'])
+                ->helperText($service->protocol === VpnProtocol::WireGuard
+                    ? 'Leave empty to use the service resolver. Set, this user\'s device is pointed straight at these resolvers instead -- so their DNS lookups stop being recorded in the traffic log.'
+                    : 'Leave empty to use the service resolver. Set, these resolvers are pushed to this user\'s device alongside the service one (their lookups are still recorded).'),
 
             DateTimePicker::make('expires_at')
                 ->label('Access expires')

@@ -154,9 +154,21 @@ class WireGuardDriver implements VpnProtocolDriver
             ->filter()
             ->values();
 
-        $dns = ($config['push_dns'] ?? true)
-            ? $this->gatewayAddress($service)
-            : implode(', ', $customDns->isEmpty() ? DnsmasqManager::DEFAULT_UPSTREAMS : $customDns->all());
+        // A per-user override wins over everything: point this one client
+        // straight at the resolvers set on the user, replacing the service
+        // gateway. Because their lookups then never reach this service's
+        // dnsmasq, they stop being logged for this user -- a deliberate,
+        // surfaced trade-off (a filtered family resolver, a work DNS), not a
+        // side effect. Validated to bare IPs at the sink: it lands in a config
+        // the user's device reads, and an empty override falls through to the
+        // normal service behaviour rather than rendering an empty DNS line.
+        $userDns = NetworkInput::filterUpstreams($user->dns_override ?? []);
+
+        $dns = match (true) {
+            $userDns !== [] => implode(', ', $userDns),
+            (bool) ($config['push_dns'] ?? true) => $this->gatewayAddress($service),
+            default => implode(', ', $customDns->isEmpty() ? DnsmasqManager::DEFAULT_UPSTREAMS : $customDns->all()),
+        };
 
         $mtu = $config['mtu'] ?? 1420;
         $allowedIps = $config['client_allowed_ips'] ?? '0.0.0.0/0, ::/0';

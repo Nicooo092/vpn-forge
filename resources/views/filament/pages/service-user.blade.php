@@ -34,6 +34,12 @@
                     <dt class="text-gray-500 dark:text-gray-400">Access expires</dt>
                     <dd>{{ $user->expires_at?->toDayDateTimeString() ?? 'never' }}</dd>
                 </div>
+                @if (filled($user->dns_override))
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Custom DNS</dt>
+                        <dd class="font-mono">{{ implode(', ', $user->dns_override) }}</dd>
+                    </div>
+                @endif
                 @if ($user->labels)
                     <div>
                         <dt class="text-gray-500 dark:text-gray-400">Labels</dt>

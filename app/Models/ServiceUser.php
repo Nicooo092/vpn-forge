@@ -54,6 +54,7 @@ class ServiceUser extends Model
         'quota_started_at',
         'suspended_reason',
         'labels',
+        'dns_override',
         'last_handshake_at',
         'last_connected_at',
         'last_seen_ip',
@@ -70,6 +71,7 @@ class ServiceUser extends Model
             'expires_at' => 'datetime',
             'quota_started_at' => 'datetime',
             'labels' => 'array',
+            'dns_override' => 'array',
             'issued_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_handshake_at' => 'datetime',
@@ -107,6 +109,11 @@ class ServiceUser extends Model
     public function bandwidthSamples(): HasMany
     {
         return $this->hasMany(BandwidthSample::class);
+    }
+
+    public function configLinks(): HasMany
+    {
+        return $this->hasMany(ConfigLink::class);
     }
 
     /**

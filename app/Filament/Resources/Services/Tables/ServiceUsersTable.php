@@ -9,6 +9,7 @@ use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Jobs\Vpn\RemoveServiceUser;
 use App\Jobs\Vpn\RotateUserKeys;
+use App\Models\ConfigLink;
 use App\Models\ServiceUser;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
@@ -19,12 +20,15 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 use Throwable;
 
 class ServiceUsersTable
@@ -124,7 +128,7 @@ class ServiceUsersTable
             ->headerActions([
                 CreateAction::make()
                     ->label('Add user')
-                    ->mutateFormDataUsing(self::normaliseLogging(...))
+                    ->mutateFormDataUsing(self::normaliseUserData(...))
                     ->after(fn (ServiceUser $record) => AddServiceUser::dispatch($record)),
             ])
             // Rendered inline these overflow the row and push the telemetry
@@ -132,30 +136,37 @@ class ServiceUsersTable
             ->recordActions([
                 ActionGroup::make([
                     EditAction::make()
-                        ->fillForm(fn (ServiceUser $record) => [
-                            'name' => $record->name,
-                            'tunnel_ip' => $record->tunnel_ip,
+                        // Transform the record's own attributes rather than
+                        // supplying a hand-picked subset: fillForm() with a
+                        // partial array *replaces* the default full-record
+                        // fill, which silently blanked labels, expiry and the
+                        // allowance on every edit and wrote those nulls back on
+                        // save. mutateRecordDataUsing() keeps every column and
+                        // only translates the one field the form re-shapes.
+                        ->mutateRecordDataUsing(function (array $data): array {
                             // The select trades in strings so it can offer
                             // "inherit" alongside the two booleans.
-                            'logging_override' => match ($record->logging_override) {
-                                null => '',
+                            $data['logging_override'] = match ($data['logging_override'] ?? null) {
                                 true => '1',
                                 false => '0',
-                            },
-                        ])
-                        ->mutateFormDataUsing(self::normaliseLogging(...))
+                                default => '',
+                            };
+
+                            return $data;
+                        })
+                        ->mutateFormDataUsing(self::normaliseUserData(...))
                         ->after(function (ServiceUser $record): void {
-                            // Moving a peer to another address changes the
-                            // interface's AllowedIPs and every rendered client
-                            // config, so it has to be re-applied. A logging
-                            // change needs nothing: the capture agent re-reads
-                            // the user table on its own.
-                            if ($record->wasChanged('tunnel_ip')) {
+                            // Both of these change what a client config should
+                            // contain (its address, its resolver), so the
+                            // service has to be re-applied and every config
+                            // re-rendered. A logging change needs nothing: the
+                            // capture agent re-reads the user table on its own.
+                            if ($record->wasChanged('tunnel_ip') || $record->wasChanged('dns_override')) {
                                 ApplyServiceConfig::dispatch($record->service);
 
                                 Notification::make()
-                                    ->title('Tunnel address changed')
-                                    ->body('Re-applying the service config. Download this user\'s config again -- the old one points at the previous address.')
+                                    ->title($record->wasChanged('tunnel_ip') ? 'Tunnel address changed' : 'DNS changed')
+                                    ->body('Re-applying in the background. Download this user\'s config again -- the previous one is now out of date.')
                                     ->warning()
                                     ->send();
                             }
@@ -206,6 +217,77 @@ class ServiceUsersTable
                             'filament.service-user-qr',
                             self::qrModalData($record),
                         )),
+                    // Hand-off without sending key material yourself: mint a
+                    // public link the person opens once to collect their own
+                    // config. The URL is shown once, here, and never again --
+                    // only its hash is stored.
+                    Action::make('share')
+                        ->label('Share link')
+                        ->icon('heroicon-o-link')
+                        ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
+                        ->modalHeading(fn (ServiceUser $record) => "One-time link for {$record->name}")
+                        ->modalDescription('Creates a public link this person opens to collect their own config, so you never have to send the file. The link is shown once -- copy it before closing.')
+                        ->modalSubmitActionLabel('Create link')
+                        ->schema([
+                            Select::make('expiry')
+                                ->label('Link expires')
+                                ->options([
+                                    '1' => 'In 1 hour',
+                                    '24' => 'In 24 hours',
+                                    '168' => 'In 7 days',
+                                    '0' => 'No expiry (until used)',
+                                ])
+                                ->default('24')
+                                ->selectablePlaceholder(false)
+                                ->required(),
+                            Select::make('max_downloads')
+                                ->label('Can be opened')
+                                ->options([
+                                    '1' => 'Once',
+                                    '3' => 'Up to 3 times',
+                                    '10' => 'Up to 10 times',
+                                ])
+                                ->default('1')
+                                ->selectablePlaceholder(false)
+                                ->required(),
+                        ])
+                        ->action(function (ServiceUser $record, array $data): void {
+                            $hours = (int) $data['expiry'];
+
+                            [, $token] = ConfigLink::mintFor(
+                                $record,
+                                $hours > 0 ? now()->addHours($hours) : null,
+                                (int) $data['max_downloads'],
+                                Auth::id(),
+                            );
+
+                            $url = route('config-link.show', ['token' => $token]);
+
+                            Notification::make()
+                                ->title('One-time link ready')
+                                ->body(new HtmlString(
+                                    '<p style="margin-bottom:.35rem">Send this to '.e($record->name).' -- it is shown only once:</p>'
+                                    .'<code style="word-break:break-all;font-size:12px;line-height:1.4">'.e($url).'</code>'
+                                ))
+                                ->success()
+                                ->persistent()
+                                ->send();
+                        }),
+                    Action::make('cancelLinks')
+                        ->label('Cancel share links')
+                        ->icon('heroicon-o-link-slash')
+                        ->color('gray')
+                        ->requiresConfirmation()
+                        ->modalDescription('Kills every share link for this user that has not already been used or expired.')
+                        ->visible(fn (ServiceUser $record) => $record->configLinks()->active()->exists())
+                        ->action(function (ServiceUser $record): void {
+                            $count = $record->configLinks()->active()->update(['revoked_at' => now()]);
+
+                            Notification::make()
+                                ->title($count === 1 ? '1 link cancelled' : "{$count} links cancelled")
+                                ->success()
+                                ->send();
+                        }),
                     Action::make('rotate')
                         ->label('Regenerate keys')
                         ->icon('heroicon-o-key')
@@ -328,9 +410,17 @@ class ServiceUsersTable
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    public static function normaliseLogging(array $data): array
+    public static function normaliseUserData(array $data): array
     {
         $data['logging_override'] = $data['logging_override'] === '' ? null : (bool) $data['logging_override'];
+
+        // An empty TagsInput submits [], but the column's absent state is null.
+        // Store null so a user who never had a DNS override does not register a
+        // spurious change on an unrelated edit (which would needlessly
+        // re-apply the whole service config).
+        if (array_key_exists('dns_override', $data)) {
+            $data['dns_override'] = filled($data['dns_override']) ? array_values($data['dns_override']) : null;
+        }
 
         return $data;
     }
