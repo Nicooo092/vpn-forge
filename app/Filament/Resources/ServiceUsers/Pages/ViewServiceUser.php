@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ServiceUsers\Pages;
 use App\Enums\TrafficLogKind;
 use App\Filament\Resources\Services\ServiceResource;
 use App\Filament\Resources\ServiceUsers\ServiceUserResource;
+use App\Services\Traffic\DomainCategory;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
@@ -50,7 +51,7 @@ class ViewServiceUser extends Page
     }
 
     /**
-     * @return array<int, array{host: string, hits: int, last_seen: string}>
+     * @return array<int, array{host: string, hits: int, last_seen: string, category: DomainCategory}>
      */
     public function getTopDomains(): array
     {
@@ -67,6 +68,7 @@ class ViewServiceUser extends Page
                 'host' => $row->host,
                 'hits' => (int) $row->hits,
                 'last_seen' => Carbon::parse($row->last_seen)->diffForHumans(),
+                'category' => DomainCategory::for($row->host),
             ])
             ->all();
     }

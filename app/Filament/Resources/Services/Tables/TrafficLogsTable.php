@@ -4,12 +4,15 @@ namespace App\Filament\Resources\Services\Tables;
 
 use App\Enums\ServiceUserStatus;
 use App\Enums\TrafficLogKind;
+use App\Jobs\Vpn\ApplyServiceConfig;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Models\TrafficLog;
 use App\Services\Logs\LogExporter;
+use App\Services\Traffic\DomainCategory;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -49,6 +52,11 @@ class TrafficLogsTable
                     ->searchable()
                     ->placeholder('not resolved')
                     ->limit(50),
+                TextColumn::make('category')
+                    ->label('Category')
+                    ->badge()
+                    ->state(fn (TrafficLog $record) => DomainCategory::for($record->host))
+                    ->toggleable(),
                 // The two legs beyond the client's request: who the server
                 // asked, and what came back.
                 TextColumn::make('via')
@@ -101,6 +109,34 @@ class TrafficLogsTable
                             ->fontFamily('mono'),
                     ])
                     ->modalSubmitAction(false),
+                // Block a domain straight from the log line it appears on --
+                // adds it to the service blocklist and re-applies the resolver.
+                Action::make('block')
+                    ->label('Block')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->visible(fn (TrafficLog $record) => filled($record->host)
+                        && ! in_array(strtolower($record->host), array_map('strtolower', $service->config['blocked_domains'] ?? []), true))
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (TrafficLog $record) => "Block {$record->host}?")
+                    ->modalDescription('Adds this domain (and its subdomains) to the blocklist for everyone on this service. Applied within a few seconds.')
+                    ->action(function (TrafficLog $record) use ($service) {
+                        $service->refresh();
+                        $config = $service->config ?? [];
+                        $config['blocked_domains'] = array_values(array_unique([
+                            ...($config['blocked_domains'] ?? []),
+                            strtolower($record->host),
+                        ]));
+                        $service->update(['config' => $config]);
+
+                        ApplyServiceConfig::dispatch($service);
+
+                        Notification::make()
+                            ->title("Blocking {$record->host}")
+                            ->body('Applying to the resolver in the background.')
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->headerActions([
                 Action::make('export')

@@ -8,6 +8,7 @@ use App\Filament\Resources\Services\Pages\ListServices;
 use App\Filament\Resources\Services\Pages\ManageConnectionLogs;
 use App\Filament\Resources\Services\Pages\ManageServiceUsers;
 use App\Filament\Resources\Services\Pages\ManageTrafficLogs;
+use App\Filament\Resources\Services\Pages\ServiceReport;
 use App\Filament\Resources\Services\Schemas\ServiceForm;
 use App\Filament\Resources\Services\Tables\ServicesTable;
 use App\Models\Service;
@@ -53,6 +54,7 @@ class ServiceResource extends Resource
             ManageServiceUsers::class,
             ManageConnectionLogs::class,
             ManageTrafficLogs::class,
+            ServiceReport::class,
         ]);
     }
 
@@ -65,6 +67,7 @@ class ServiceResource extends Resource
             'users' => ManageServiceUsers::route('/{record}/users'),
             'connections' => ManageConnectionLogs::route('/{record}/connections'),
             'traffic' => ManageTrafficLogs::route('/{record}/traffic'),
+            'report' => ServiceReport::route('/{record}/report'),
         ];
     }
 }

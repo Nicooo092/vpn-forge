@@ -129,7 +129,12 @@
                 <div class="divide-y divide-gray-200 text-sm dark:divide-white/10">
                     @foreach ($domains as $domain)
                         <div class="flex items-center justify-between gap-4 py-2">
-                            <span class="truncate">{{ $domain['host'] }}</span>
+                            <span class="flex min-w-0 items-center gap-2">
+                                <span class="truncate">{{ $domain['host'] }}</span>
+                                <x-filament::badge :color="$domain['category']->getColor()" size="sm">
+                                    {{ $domain['category']->getLabel() }}
+                                </x-filament::badge>
+                            </span>
                             <span class="shrink-0 text-gray-500 dark:text-gray-400">
                                 {{ $domain['hits'] }} &middot; {{ $domain['last_seen'] }}
                             </span>
