@@ -2,21 +2,22 @@
 
 namespace App\Filament\Resources\Services\Pages;
 
-use App\Enums\TrafficLogKind;
 use App\Filament\Resources\Services\ServiceResource;
-use App\Services\Traffic\DomainCategory;
+use App\Services\Reports\ReportPdf;
+use App\Services\Reports\ServiceReportData;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 
 /**
  * "What did this service's users actually visit." Aggregates the DNS traffic
  * log by domain and by category over a chosen window, so a flat stream of
- * thousands of lookups becomes a readable summary.
+ * thousands of lookups becomes a readable summary. The heavy lifting lives in
+ * ServiceReportData, shared with the PDF and scheduled exports.
  */
 class ServiceReport extends Page
 {
@@ -49,12 +50,31 @@ class ServiceReport extends Page
         return 'Report -- '.$this->record->name;
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('pdf')
+                ->label('Download PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->visible(fn (): bool => $this->data()->hasData())
+                ->action(fn () => response()->streamDownload(
+                    fn () => print (app(ReportPdf::class)->render($this->record, $this->since(), $this->periodLabel())),
+                    "report-{$this->record->interface_name}-{$this->period}.pdf",
+                )),
+        ];
+    }
+
     /**
      * @return array<string, string>
      */
     public function periodOptions(): array
     {
         return ['24h' => 'Last 24 hours', '7d' => 'Last 7 days', '30d' => 'Last 30 days'];
+    }
+
+    private function periodLabel(): string
+    {
+        return $this->periodOptions()[$this->period] ?? 'Last 7 days';
     }
 
     private function since(): Carbon
@@ -66,92 +86,20 @@ class ServiceReport extends Page
         };
     }
 
-    /**
-     * Every DNS lookup host + count in the window, categorised in PHP. One
-     * query, grouped in the database; categorisation is cheap per distinct
-     * host.
-     *
-     * @return Collection<int, object{host: string, hits: int, category: DomainCategory}>
-     */
-    private function domains(): Collection
+    private function data(): ServiceReportData
     {
-        return $this->record->trafficLogs()
-            ->where('kind', TrafficLogKind::Dns)
-            ->whereNotNull('host')
-            ->where('occurred_at', '>=', $this->since())
-            ->selectRaw('host, COUNT(*) as hits')
-            ->groupBy('host')
-            ->orderByDesc('hits')
-            ->get()
-            ->map(fn ($row) => (object) [
-                'host' => $row->host,
-                'hits' => (int) $row->hits,
-                'category' => DomainCategory::for($row->host),
-            ]);
-    }
-
-    public function hasData(): bool
-    {
-        return $this->domains()->isNotEmpty();
-    }
-
-    /**
-     * @return array<int, array{category: DomainCategory, hits: int, domains: int, percent: float}>
-     */
-    public function categoryBreakdown(): array
-    {
-        $domains = $this->domains();
-        $total = max(1, $domains->sum('hits'));
-
-        return $domains
-            ->groupBy(fn ($d) => $d->category->value)
-            ->map(fn ($group) => [
-                'category' => $group->first()->category,
-                'hits' => $group->sum('hits'),
-                'domains' => $group->count(),
-                'percent' => round($group->sum('hits') / $total * 100, 1),
-            ])
-            ->sortByDesc('hits')
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array<int, object{host: string, hits: int, category: DomainCategory}>
-     */
-    public function topDomains(int $limit = 25): array
-    {
-        return $this->domains()->take($limit)->all();
-    }
-
-    /**
-     * @return array<int, array{name: string, hits: int}>
-     */
-    public function topUsers(int $limit = 10): array
-    {
-        return $this->record->trafficLogs()
-            ->where('kind', TrafficLogKind::Dns)
-            ->where('occurred_at', '>=', $this->since())
-            ->with('serviceUser:id,name')
-            ->selectRaw('service_user_id, COUNT(*) as hits')
-            ->groupBy('service_user_id')
-            ->orderByDesc('hits')
-            ->limit($limit)
-            ->get()
-            ->map(fn ($row) => [
-                'name' => $row->serviceUser?->name ?? 'unknown',
-                'hits' => (int) $row->hits,
-            ])
-            ->all();
+        return new ServiceReportData($this->record, $this->since());
     }
 
     protected function getViewData(): array
     {
+        $data = $this->data();
+
         return [
-            'hasData' => $this->hasData(),
-            'breakdown' => $this->categoryBreakdown(),
-            'topDomains' => $this->topDomains(),
-            'topUsers' => $this->topUsers(),
+            'hasData' => $data->hasData(),
+            'breakdown' => $data->categoryBreakdown(),
+            'topDomains' => $data->topDomains(),
+            'topUsers' => $data->topUsers(),
         ];
     }
 

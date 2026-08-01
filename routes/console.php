@@ -21,3 +21,18 @@ Schedule::job(new PollAllServiceStatuses)->everyMinute()->onOneServer();
 Schedule::job(new EnforceUserLimits)->everyFiveMinutes()->onOneServer();
 
 Schedule::command('logs:prune')->daily();
+
+// Scheduled "sites visités" PDF exports. Cadence is config-driven (env
+// VPNFORGE_EXPORT_SCHEDULE) so an operator can turn it off or change it
+// without touching code; 'off' registers nothing at all.
+$exportCadence = config('vpnforge.exports.schedule', 'weekly');
+
+if ($exportCadence !== 'off') {
+    $export = Schedule::command('vpnforge:export-report')->onOneServer();
+
+    match ($exportCadence) {
+        'daily' => $export->dailyAt('06:00'),
+        'monthly' => $export->monthlyOn(1, '06:00'),
+        default => $export->weeklyOn(1, '06:00'), // Monday 06:00
+    };
+}
