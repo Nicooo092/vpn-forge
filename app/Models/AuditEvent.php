@@ -64,7 +64,14 @@ class AuditEvent extends Model
             $value === null => 'empty',
             $value === true => 'yes',
             $value === false => 'no',
-            is_array($value) => $value === [] ? 'empty' : implode(', ', $value),
+            // json_encode, not implode: a changed value can itself be a nested
+            // array (a service's whole `config` blob, whose entries include
+            // arrays like push_routes and dns_upstreams). imploding that threw
+            // "Array to string conversion" and 500'd the change-history page --
+            // the tests only ever exercised scalar changes and missed it.
+            is_array($value) => $value === []
+                ? 'empty'
+                : (json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: 'unreadable'),
             (string) $value === '' => 'empty',
             default => (string) $value,
         };

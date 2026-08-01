@@ -183,6 +183,36 @@ class KeyRotationAndAuditTest extends TestCase
             ->assertSee('laptop');
     }
 
+    /**
+     * A service's whole `config` array is audited as one field whose before/
+     * after values are themselves nested arrays. Summarising that with implode
+     * threw "Array to string conversion" and 500'd the page in production --
+     * the scalar-only test above never reached it.
+     */
+    public function test_a_nested_config_change_is_summarised_without_crashing(): void
+    {
+        $this->service->update([
+            'config' => [
+                'endpoint_host' => 'vpn.example.com',
+                'dns_upstreams' => ['1.1.1.1', '1.0.0.1'],
+                'push_routes' => [],
+            ],
+        ]);
+
+        $event = AuditEvent::where('auditable_type', Service::class)
+            ->where('event', 'updated')
+            ->latest('id')
+            ->firstOrFail();
+
+        // Must produce a string, not throw.
+        $summary = $event->summary();
+        $this->assertIsString($summary);
+        $this->assertStringContainsString('1.1.1.1', $summary);
+
+        // And the page that renders it must load.
+        Livewire::test(ChangeHistory::class)->assertOk();
+    }
+
     public function test_dns_presets_round_trip(): void
     {
         $this->assertSame(['94.140.14.14', '94.140.15.15'], DnsPresets::serversFor('adguard'));
