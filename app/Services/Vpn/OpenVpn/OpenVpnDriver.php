@@ -3,6 +3,7 @@
 namespace App\Services\Vpn\OpenVpn;
 
 use App\Enums\ServiceStatus;
+use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Vpn\ClientConfigFile;
