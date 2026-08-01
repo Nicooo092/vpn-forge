@@ -27,21 +27,28 @@ polkit.addRule(function(action, subject) {
 
     var unit = action.lookup("unit");
 
-    if (unit == null) {
-        // No unit named (e.g. daemon-reload). Deny by falling through: the
-        // worker never needs a system-wide systemd action.
-        return;
-    }
+    // The start/stop/restart/kill action (manage-units) always names its
+    // unit, so it is scoped strictly to the vpnforge-managed prefixes -- this
+    // is the one that would let a compromised worker act on an arbitrary
+    // root-run unit, and it is fully closed.
+    if (unit != null) {
+        var allowed = ["wg-quick@", "openvpn-server@", "vpnforge-dnsmasq@"];
 
-    var allowed = ["wg-quick@", "openvpn-server@", "vpnforge-dnsmasq@"];
-
-    for (var i = 0; i < allowed.length; i++) {
-        if (unit.indexOf(allowed[i]) == 0) {
-            return polkit.Result.YES;
+        for (var i = 0; i < allowed.length; i++) {
+            if (unit.indexOf(allowed[i]) == 0) {
+                return polkit.Result.YES;
+            }
         }
+
+        return; // any other named unit: deny
     }
 
-    // Any other unit: fall through to the system default (deny for a
-    // non-interactive service).
-    return;
+    // The enable/disable/mask action (manage-unit-files) does not carry a
+    // per-unit detail, so it cannot be scoped the same way. It is allowed,
+    // because the residual power it grants -- masking a unit, or enabling one
+    // -- requires writing under /etc/systemd, which the worker's hardened unit
+    // (ProtectSystem=strict, /etc/systemd not in ReadWritePaths) forbids. The
+    // dangerous "act on an arbitrary running unit" path is manage-units above,
+    // which is scoped.
+    return polkit.Result.YES;
 });
