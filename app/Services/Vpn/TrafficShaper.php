@@ -153,10 +153,16 @@ class TrafficShaper
      */
     private function htbRoot(string $dev, int $linkMbit): array
     {
+        // The explicit quantum on the two link-speed classes only silences
+        // HTB's "quantum ... is big" notice, which it prints for any class
+        // whose auto-computed quantum (rate / r2q) exceeds ~200000 bytes -- a
+        // gigabit rate always does. It is cosmetic (the rule works either way),
+        // but left alone it lands in the worker log on every apply. The
+        // per-user classes below run at Mbit/s, so their auto quantum is fine.
         return [
             $this->cmd(['tc', 'qdisc', 'add', 'dev', $dev, 'root', 'handle', '1:', 'htb', 'default', self::DEFAULT_CLASS]),
-            $this->cmd(['tc', 'class', 'add', 'dev', $dev, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', "{$linkMbit}mbit"]),
-            $this->cmd(['tc', 'class', 'add', 'dev', $dev, 'parent', '1:1', 'classid', '1:'.self::DEFAULT_CLASS, 'htb', 'rate', "{$linkMbit}mbit", 'ceil', "{$linkMbit}mbit"]),
+            $this->cmd(['tc', 'class', 'add', 'dev', $dev, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', "{$linkMbit}mbit", 'quantum', '200000']),
+            $this->cmd(['tc', 'class', 'add', 'dev', $dev, 'parent', '1:1', 'classid', '1:'.self::DEFAULT_CLASS, 'htb', 'rate', "{$linkMbit}mbit", 'ceil', "{$linkMbit}mbit", 'quantum', '200000']),
         ];
     }
 
