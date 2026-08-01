@@ -296,10 +296,18 @@ class ServiceForm
                                 ->dehydratedWhenHidden()
                                 ->helperText('1.3 is stricter but rejects older clients.'),
 
-                            TextInput::make('config.keepalive')
+                            // Deliberately not `config.keepalive`: WireGuard
+                            // uses that key for a single number, and sharing
+                            // it meant an OpenVPN service could be created
+                            // holding a WireGuard-shaped value, which OpenVPN
+                            // rejects outright -- the server then never
+                            // starts at all.
+                            TextInput::make('config.openvpn_keepalive')
                                 ->label('Keepalive (ping ping-restart)')
                                 ->default('10 60')
                                 ->dehydratedWhenHidden()
+                                ->rule('regex:/^\d+\s+\d+$/')
+                                ->validationMessages(['regex' => 'Two numbers separated by a space, for example 10 60.'])
                                 ->helperText('Two numbers: ping interval and restart timeout, in seconds.'),
 
                             TextInput::make('config.max_clients')

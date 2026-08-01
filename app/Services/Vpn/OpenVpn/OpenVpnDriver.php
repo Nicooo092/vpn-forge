@@ -386,17 +386,40 @@ class OpenVpnDriver implements VpnProtocolDriver
         }
     }
 
-    private function writeServerConfig(Service $service): void
+    /**
+     * OpenVPN's keepalive takes two numbers -- a ping interval and a restart
+     * timeout -- and refuses to start at all on anything else, taking the
+     * whole service down.
+     *
+     * It used to share the `keepalive` config key with WireGuard, whose value
+     * is a single number. An OpenVPN service created while that key held a
+     * WireGuard-shaped 25 produced `keepalive 25`, and the server died in a
+     * restart loop. The key is separate now, but a stored value is still
+     * checked rather than trusted: it is free text, and one malformed entry
+     * costs the entire service.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function keepalive(array $config): string
+    {
+        $value = trim((string) ($config['openvpn_keepalive'] ?? $config['keepalive'] ?? ''));
+
+        return preg_match('/^\d+\s+\d+$/', $value) === 1 ? $value : '10 60';
+    }
+
+    /**
+     * Kept apart from writing it so the directives can be asserted on without
+     * touching /etc or restarting anything. Every value here reaches OpenVPN
+     * verbatim, and OpenVPN refuses to start on a single malformed line --
+     * there is no partial success to fall back on.
+     */
+    public function buildServerConfig(Service $service): string
     {
         $dir = $this->serviceDir($service);
         $config = $service->config ?? [];
 
-        // The config below names this directory, and OpenVPN refuses to start
-        // if it is missing -- so create it even when nobody is suspended.
-        File::ensureDirectoryExists($this->clientConfigDir($service), 0750);
-
         $dataCiphers = $config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305';
-        $keepalive = $config['keepalive'] ?? '10 60';
+        $keepalive = $this->keepalive($config);
         $authDigest = $config['auth_digest'] ?? 'SHA256';
         $tlsVersionMin = $config['tls_version_min'] ?? '1.2';
         $verb = (int) ($config['verb'] ?? 3);
@@ -448,10 +471,22 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         CONF;
 
+        return $contents;
+    }
+
+    private function writeServerConfig(Service $service): void
+    {
+        $config = $service->config ?? [];
+        $egressInterface = $config['egress_interface'] ?? 'eth0';
+
+        // The config names this directory, and OpenVPN refuses to start if it
+        // is missing -- so create it even when nobody is suspended.
+        File::ensureDirectoryExists($this->clientConfigDir($service), 0750);
+
         // Not {$dir}/server.conf -- see the UNIT_CONFIG_DIR doc comment.
         // (Ubuntu's unit also supplies its own --status flag on the CLI, so
         // a `status` directive here would just be redundant.)
-        File::put($this->unitConfigPath($service), $contents);
+        File::put($this->unitConfigPath($service), $this->buildServerConfig($service));
 
         // NAT for this service's subnet, mirroring the WireGuard driver's
         // PostUp/PreDown -- OpenVPN's own config format has no equivalent
