@@ -38,6 +38,16 @@ install_app() {
   ensure_env_key .env CACHE_STORE database
   ensure_env_key .env SESSION_DRIVER database
   ensure_env_key .env QUEUE_CONNECTION database
+
+  # Mark the session cookie Secure whenever the panel is served over HTTPS, so
+  # the browser never sends it back over a plain-HTTP request. On a bare-IP
+  # HTTP install this stays false, since a Secure cookie the browser refuses to
+  # send would lock the operator out.
+  if [ "${SCHEME}" = "https" ]; then
+    ensure_env_key .env SESSION_SECURE_COOKIE true
+  else
+    ensure_env_key .env SESSION_SECURE_COOKIE false
+  fi
   php artisan config:clear
 
   output "Running database migrations..."

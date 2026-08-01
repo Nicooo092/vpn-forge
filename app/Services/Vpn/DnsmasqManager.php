@@ -59,19 +59,21 @@ class DnsmasqManager
      */
     public function buildConfig(Service $service): string
     {
+        // dnsmasq reads this file line by line, so any value that reaches it
+        // with a newline in the middle injects an arbitrary directive
+        // (DNS spoofing via address=/bank/, arbitrary file writes via
+        // log-facility=). NetworkInput keeps only genuine IPs / hostnames,
+        // which by construction contain no newline, space or slash.
+        NetworkInput::assertInterfaceName($service->interface_name);
+
         $gatewayIp = $this->gatewayAddress($service);
         $logPath = $this->logPath($service);
 
-        // `?? default` does not catch an empty array, and the form stores one
-        // whenever the tag field is cleared or was never filled in. Combined
-        // with no-resolv below, zero server= lines leaves dnsmasq with no
-        // upstream at all: it answers every lookup with a failure and the
-        // tunnel stops resolving anything, which looks exactly like the VPN
-        // being down. Anything falsy here falls back to the defaults.
-        $upstreams = collect($service->config['dns_upstreams'] ?? [])
-            ->map(fn ($server) => trim((string) $server))
-            ->filter()
-            ->values();
+        // Only valid resolver IPs survive. An empty list -- the field was
+        // cleared, or everything in it was rejected -- falls back to the
+        // defaults rather than leaving dnsmasq with no upstream at all, which
+        // combined with no-resolv would make it fail every lookup.
+        $upstreams = collect(NetworkInput::filterUpstreams($service->config['dns_upstreams'] ?? []));
 
         if ($upstreams->isEmpty()) {
             $upstreams = collect(self::DEFAULT_UPSTREAMS);
@@ -83,12 +85,8 @@ class DnsmasqManager
 
         // address=/example.com/ with no address answers NXDOMAIN for the name
         // and everything under it, so one entry covers the subdomains a site
-        // actually loads from. It is answered locally, which also means a
-        // blocked lookup never reaches the upstream resolver at all.
-        $blocked = collect($service->config['blocked_domains'] ?? [])
-            ->map(fn (string $domain) => trim($domain, " \t\n\r\0\x0B."))
-            ->filter()
-            ->unique()
+        // actually loads from. Only real hostnames survive the filter.
+        $blocked = collect(NetworkInput::filterBlockedDomains($service->config['blocked_domains'] ?? []))
             ->map(fn (string $domain) => "address=/{$domain}/")
             ->implode("\n");
 

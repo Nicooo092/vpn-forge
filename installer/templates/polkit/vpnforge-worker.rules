@@ -8,10 +8,40 @@
 // provide. NoNewPrivileges=yes on the worker unit rules out sudo as an
 // alternative fix (sudo itself needs a new-privilege execve to elevate),
 // so this is the mechanism that actually works for this specific gap.
+//
+// Scoped to only the units this app manages. An unscoped rule would let a
+// compromised worker start, stop, restart or mask ANY unit on the system --
+// including root-run ones -- which is a straight escalation out of the
+// CAP_NET_ADMIN sandbox the rest of the design works to keep it inside.
+// The unit name is read from the action, and only the vpnforge-managed
+// prefixes are permitted.
 polkit.addRule(function(action, subject) {
-    if ((action.id == "org.freedesktop.systemd1.manage-units" ||
-         action.id == "org.freedesktop.systemd1.manage-unit-files") &&
-        subject.user == "vpnforge-worker") {
-        return polkit.Result.YES;
+    if (subject.user != "vpnforge-worker") {
+        return;
     }
+
+    if (action.id != "org.freedesktop.systemd1.manage-units" &&
+        action.id != "org.freedesktop.systemd1.manage-unit-files") {
+        return;
+    }
+
+    var unit = action.lookup("unit");
+
+    if (unit == null) {
+        // No unit named (e.g. daemon-reload). Deny by falling through: the
+        // worker never needs a system-wide systemd action.
+        return;
+    }
+
+    var allowed = ["wg-quick@", "openvpn-server@", "vpnforge-dnsmasq@"];
+
+    for (var i = 0; i < allowed.length; i++) {
+        if (unit.indexOf(allowed[i]) == 0) {
+            return polkit.Result.YES;
+        }
+    }
+
+    // Any other unit: fall through to the system default (deny for a
+    // non-interactive service).
+    return;
 });

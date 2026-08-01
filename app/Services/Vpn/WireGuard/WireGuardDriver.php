@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Vpn\ClientConfigFile;
 use App\Services\Vpn\DnsmasqManager;
+use App\Services\Vpn\NetworkInput;
 use App\Services\Vpn\PeerStatus;
 use App\Services\Vpn\VpnProtocolDriver;
 use Carbon\CarbonImmutable;
@@ -42,6 +43,10 @@ class WireGuardDriver implements VpnProtocolDriver
 
     public function provisionService(Service $service): void
     {
+        // Reject a bad interface name before it reaches a path or a systemd
+        // instance name (a "../.." would escape the config directory).
+        NetworkInput::assertInterfaceName($service->interface_name);
+
         $confPath = $this->confPath($service);
 
         if (! File::exists($confPath)) {
@@ -359,8 +364,17 @@ class WireGuardDriver implements VpnProtocolDriver
     private function writeConfig(Service $service, string $privateKey): void
     {
         $config = $service->config ?? [];
-        $mtu = $config['mtu'] ?? 1420;
-        $egressInterface = $config['egress_interface'] ?? 'eth0';
+        $mtu = (int) ($config['mtu'] ?? 1420);
+
+        // These three are interpolated into the PostUp/PreDown lines below,
+        // which wg-quick runs through a shell AS ROOT at boot. Validate at
+        // this sink -- not only in the form -- so no write path (a job, a
+        // direct DB edit) can smuggle a shell metacharacter into a root
+        // command. A bad value fails the provisioning job loudly rather than
+        // producing an injected config.
+        $iface = NetworkInput::assertInterfaceName($service->interface_name);
+        $subnet = NetworkInput::assertSubnetCidr($service->subnet_cidr);
+        $egressInterface = NetworkInput::assertEgressInterface($config['egress_interface'] ?? 'eth0');
 
         $lines = [
             '[Interface]',
@@ -368,8 +382,8 @@ class WireGuardDriver implements VpnProtocolDriver
             'Address = '.$this->gatewayAddress($service).'/'.$this->prefixLength($service),
             "ListenPort = {$service->listen_port}",
             "MTU = {$mtu}",
-            "PostUp = iptables -t nat -A POSTROUTING -s {$service->subnet_cidr} -o {$egressInterface} -j MASQUERADE; iptables -A FORWARD -i {$service->interface_name} -j ACCEPT; iptables -A FORWARD -o {$service->interface_name} -j ACCEPT",
-            "PreDown = iptables -t nat -D POSTROUTING -s {$service->subnet_cidr} -o {$egressInterface} -j MASQUERADE; iptables -D FORWARD -i {$service->interface_name} -j ACCEPT; iptables -D FORWARD -o {$service->interface_name} -j ACCEPT",
+            "PostUp = iptables -t nat -A POSTROUTING -s {$subnet} -o {$egressInterface} -j MASQUERADE; iptables -A FORWARD -i {$iface} -j ACCEPT; iptables -A FORWARD -o {$iface} -j ACCEPT",
+            "PreDown = iptables -t nat -D POSTROUTING -s {$subnet} -o {$egressInterface} -j MASQUERADE; iptables -D FORWARD -i {$iface} -j ACCEPT; iptables -D FORWARD -o {$iface} -j ACCEPT",
             '',
         ];
 

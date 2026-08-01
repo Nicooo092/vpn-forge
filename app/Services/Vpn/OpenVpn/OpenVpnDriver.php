@@ -7,6 +7,7 @@ use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Vpn\ClientConfigFile;
+use App\Services\Vpn\NetworkInput;
 use App\Services\Vpn\PeerStatus;
 use App\Services\Vpn\VpnProtocolDriver;
 use Carbon\CarbonImmutable;
@@ -46,6 +47,10 @@ class OpenVpnDriver implements VpnProtocolDriver
 
     public function provisionService(Service $service): void
     {
+        // interface_name becomes a directory, a systemd instance name and a
+        // config path, so a "../.." would escape the service directory.
+        NetworkInput::assertInterfaceName($service->interface_name);
+
         $dir = $this->serviceDir($service);
         $pkiDir = "{$dir}/pki";
 
@@ -418,6 +423,13 @@ class OpenVpnDriver implements VpnProtocolDriver
     {
         $dir = $this->serviceDir($service);
         $config = $service->config ?? [];
+
+        // Same reasoning as the WireGuard driver: validate at the sink so no
+        // write path can slip a metacharacter into the generated config, the
+        // NAT rule interface, or a path.
+        NetworkInput::assertInterfaceName($service->interface_name);
+        NetworkInput::assertSubnetCidr($service->subnet_cidr);
+        NetworkInput::assertEgressInterface($config['egress_interface'] ?? 'eth0');
 
         $dataCiphers = $config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305';
         $keepalive = $this->keepalive($config);

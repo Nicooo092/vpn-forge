@@ -23,5 +23,21 @@ AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 NoNewPrivileges=yes
 
+# Contain a worker compromise. The whole filesystem is read-only except the
+# few paths it genuinely writes: its own config/PKI directories, the logs,
+# and the backup and application-storage areas. Everything else it touches
+# (mysqldump, wg, easyrsa, iptables, systemctl, ip) it only reads or runs.
+ProtectSystem=strict
+ReadWritePaths=/etc/wireguard /etc/openvpn /etc/vpnforge /var/log/vpnforge /var/backups/vpnforge __APP_DIR__/storage __APP_DIR__/bootstrap/cache
+ProtectHome=yes
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+# ProtectKernelModules is deliberately NOT set: bringing up a WireGuard
+# interface can autoload the wireguard kernel module.
+
 [Install]
 WantedBy=multi-user.target

@@ -199,7 +199,11 @@ return [
     |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'lax'),
+    // strict, not lax: the panel has no cross-site flows it needs cookies for
+    // (no external logins, no embeds), so the tighter setting closes the small
+    // window lax leaves for top-level cross-site GET requests to carry the
+    // session. On HTTPS, set SESSION_SECURE_COOKIE=true above to add Secure.
+    'same_site' => env('SESSION_SAME_SITE', 'strict'),
 
     /*
     |--------------------------------------------------------------------------

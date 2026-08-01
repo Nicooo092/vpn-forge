@@ -178,10 +178,17 @@ class ServiceForm
                         ->columns(2)
                         ->dehydratedWhenHidden()
                         ->schema([
+                            // Strict allow-list, not just a length cap: this
+                            // value becomes a systemd instance name, a file
+                            // path and part of a root-run iptables line, so
+                            // anything outside [a-z0-9] would be an injection
+                            // or traversal vector. Mirrors NetworkInput, which
+                            // enforces the same at the driver.
                             TextInput::make('interface_name')
                                 ->label('Interface name')
                                 ->required()
-                                ->maxLength(64)
+                                ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
+                                ->validationMessages(['regex' => 'Lower-case letters and digits only, starting with a letter, e.g. wg0.'])
                                 ->default(fn (Get $get) => self::suggestInterfaceName(self::protocolFrom($get('protocol'))))
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
@@ -190,6 +197,8 @@ class ServiceForm
                             TextInput::make('subnet_cidr')
                                 ->label('Subnet (CIDR)')
                                 ->required()
+                                ->rule('regex:/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/')
+                                ->validationMessages(['regex' => 'An IPv4 CIDR, e.g. 10.8.0.0/24.'])
                                 ->default(fn () => self::suggestSubnet())
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
@@ -223,6 +232,8 @@ class ServiceForm
                             TextInput::make('config.egress_interface')
                                 ->label('Egress network interface')
                                 ->required()
+                                ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
+                                ->validationMessages(['regex' => 'Lower-case letters and digits only, e.g. eth0 or ens5.'])
                                 ->default(fn () => self::detectEgressInterface())
                                 ->dehydratedWhenHidden()
                                 ->helperText('The server\'s internet-facing interface, used for the NAT/MASQUERADE rule.'),
