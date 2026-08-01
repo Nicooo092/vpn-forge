@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -27,6 +28,21 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // A panel that can read everyone's browsing history is worth a
+            // second factor. Optional rather than enforced: turning the
+            // required flag on locks out anyone who has not set it up yet,
+            // which on a running install means locking out the only operator.
+            // Add `isRequired: true` below once every account has one.
+            ->multiFactorAuthentication(
+                AppAuthentication::make()
+                    // Without recovery codes, losing the phone means losing
+                    // the panel, and the only way back is editing the
+                    // database by hand over SSH.
+                    ->recoverable(),
+            )
+            // Where an operator sets it up, and the only page that exposes
+            // those actions.
+            ->profile()
             ->brandName('vpn-forge')
             // Filament otherwise caps page content at 7xl (80rem / 1280px)
             // -- see resources/views/components/layout/index.blade.php. On a
