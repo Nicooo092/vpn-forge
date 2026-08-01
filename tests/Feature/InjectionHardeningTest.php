@@ -140,4 +140,70 @@ class InjectionHardeningTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         (new OpenVpnDriver)->buildServerConfig($service);
     }
+
+    private function openvpnService(array $config = []): Service
+    {
+        static $n = 0;
+        $n++;
+
+        return Service::create([
+            'name' => 'ovpn',
+            'interface_name' => "tun{$n}",
+            'subnet_cidr' => '10.9.0.0/24',
+            'listen_port' => 1194 + $n,
+            'protocol' => VpnProtocol::OpenVpn,
+            'transport' => Transport::Udp,
+            'status' => ServiceStatus::Active,
+            'logging_enabled_default' => true,
+            'config' => array_merge(['egress_interface' => 'eth0', 'endpoint_host' => '203.0.113.10'], $config),
+        ]);
+    }
+
+    /**
+     * The OpenVPN server config is read by openvpn-server@ as ROOT, and
+     * OpenVPN has directives (up, script-security) that run commands. A
+     * newline smuggled into data_ciphers via a raw Livewire payload would
+     * inject one -- this must never build.
+     */
+    public function test_a_newline_in_data_ciphers_refuses_to_build(): void
+    {
+        $service = $this->openvpnService([
+            'data_ciphers' => "AES-256-GCM\nscript-security 2\nup /bin/sh -c 'id>/tmp/pwned'",
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        (new OpenVpnDriver)->buildServerConfig($service);
+    }
+
+    public function test_a_newline_in_auth_digest_or_tls_version_refuses_to_build(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        (new OpenVpnDriver)->buildServerConfig($this->openvpnService([
+            'auth_digest' => "SHA256\nup /bin/sh",
+        ]));
+    }
+
+    public function test_malicious_push_routes_are_dropped_not_injected(): void
+    {
+        $config = (new OpenVpnDriver)->buildServerConfig($this->openvpnService([
+            'push_routes' => [
+                '10.0.0.0 255.0.0.0',                       // valid, keep
+                "192.168.1.0 255.255.255.0\"\nup /bin/sh",  // injection, drop
+                'garbage; rm -rf /',                        // junk, drop
+            ],
+        ]));
+
+        // The valid route survives.
+        $this->assertStringContainsString('push "route 10.0.0.0 255.0.0.0"', $config);
+        // Nothing injected.
+        $this->assertStringNotContainsString('up /bin/sh', $config);
+        $this->assertStringNotContainsString('script-security', $config);
+        $this->assertStringNotContainsString('rm -rf', $config);
+    }
+
+    public function test_a_newline_in_a_tunnel_ip_cannot_reach_the_wireguard_config(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        NetworkInput::assertTunnelIp("10.8.0.2/32\n[Peer]\nPublicKey = attacker");
+    }
 }

@@ -30,6 +30,7 @@ class ServiceUserForm
             TextInput::make('tunnel_ip')
                 ->label('Tunnel IP')
                 ->required()
+                ->rule('ipv4')
                 ->default(fn () => self::suggestNextTunnelIp($service))
                 ->helperText('Must be inside '.$service->subnet_cidr.' and not already assigned.'),
 

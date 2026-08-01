@@ -390,11 +390,14 @@ class WireGuardDriver implements VpnProtocolDriver
         $activeUsers = $service->serviceUsers()->where('status', ServiceUserStatus::Active)->get();
 
         foreach ($activeUsers as $user) {
+            // tunnel_ip is interpolated into this root-loaded interface config;
+            // validate it is a bare IPv4 so a newline cannot inject extra peer
+            // or AllowedIPs lines.
             $lines[] = '[Peer]';
             $lines[] = "# {$user->name}";
             $lines[] = "PublicKey = {$user->wg_public_key}";
             $lines[] = "PresharedKey = {$user->wg_preshared_key}";
-            $lines[] = "AllowedIPs = {$user->tunnel_ip}/32";
+            $lines[] = 'AllowedIPs = '.NetworkInput::assertTunnelIp($user->tunnel_ip).'/32';
             $lines[] = '';
         }
 

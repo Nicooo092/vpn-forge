@@ -431,13 +431,18 @@ class OpenVpnDriver implements VpnProtocolDriver
         NetworkInput::assertSubnetCidr($service->subnet_cidr);
         NetworkInput::assertEgressInterface($config['egress_interface'] ?? 'eth0');
 
-        $dataCiphers = $config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305';
+        // These land verbatim in server.conf, which openvpn-server@ reads as
+        // ROOT. OpenVPN's config is line-oriented and has directives (up,
+        // script-security, client-connect) that run commands, so a newline in
+        // any of them is root code execution. Validate every one at the sink,
+        // the same discipline the interface fields above already follow.
+        $dataCiphers = NetworkInput::assertCipherList($config['data_ciphers'] ?? 'AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305');
         $keepalive = $this->keepalive($config);
-        $authDigest = $config['auth_digest'] ?? 'SHA256';
-        $tlsVersionMin = $config['tls_version_min'] ?? '1.2';
+        $authDigest = NetworkInput::assertDigest($config['auth_digest'] ?? 'SHA256');
+        $tlsVersionMin = NetworkInput::assertTlsVersion($config['tls_version_min'] ?? '1.2');
         $verb = (int) ($config['verb'] ?? 3);
         $redirectGateway = ($config['redirect_gateway'] ?? true) ? "push \"redirect-gateway def1 bypass-dhcp\"\n" : '';
-        $pushRoutes = collect($config['push_routes'] ?? [])
+        $pushRoutes = collect(NetworkInput::filterPushRoutes($config['push_routes'] ?? []))
             ->map(fn (string $route) => "push \"route {$route}\"")
             ->implode("\n");
         $egressInterface = $config['egress_interface'] ?? 'eth0';

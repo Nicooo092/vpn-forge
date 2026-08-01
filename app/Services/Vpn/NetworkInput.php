@@ -81,6 +81,71 @@ class NetworkInput
     }
 
     /**
+     * A single IPv4 address for a peer's tunnel address. It lands in the root
+     * WireGuard interface config as AllowedIPs and in the client config as
+     * Address; a newline could otherwise inject extra interface lines.
+     */
+    public static function assertTunnelIp(string $value): string
+    {
+        if (filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new InvalidArgumentException("Invalid tunnel IP: {$value}. Expected an IPv4 address like 10.8.0.2.");
+        }
+
+        return $value;
+    }
+
+    /**
+     * A colon-separated OpenVPN cipher list. Cipher names are letters, digits
+     * and dashes -- nothing here may carry a newline, quote or space, because
+     * OpenVPN's config is line-oriented and has directives (up, script-security,
+     * client-connect) that execute commands as root. Same reasoning for the
+     * auth digest and TLS floor below.
+     */
+    public static function assertCipherList(string $value): string
+    {
+        if (preg_match('/^[A-Za-z0-9:_-]+$/', $value) !== 1) {
+            throw new InvalidArgumentException("Invalid data ciphers: {$value}.");
+        }
+
+        return $value;
+    }
+
+    public static function assertDigest(string $value): string
+    {
+        if (preg_match('/^[A-Za-z0-9-]+$/', $value) !== 1) {
+            throw new InvalidArgumentException("Invalid auth digest: {$value}.");
+        }
+
+        return $value;
+    }
+
+    public static function assertTlsVersion(string $value): string
+    {
+        if (preg_match('/^1\.[0-3]$/', $value) !== 1) {
+            throw new InvalidArgumentException("Invalid TLS version: {$value}.");
+        }
+
+        return $value;
+    }
+
+    /**
+     * OpenVPN push routes: each is "network netmask", two IPv4 addresses. Only
+     * elements matching that exact shape survive, so no element can smuggle a
+     * newline and a root-executing directive into the server config.
+     *
+     * @param  array<int, mixed>  $routes
+     * @return list<string>
+     */
+    public static function filterPushRoutes(array $routes): array
+    {
+        return collect($routes)
+            ->map(fn ($route) => trim((string) $route))
+            ->filter(fn (string $route) => preg_match('/^(\d{1,3}\.){3}\d{1,3}( (\d{1,3}\.){3}\d{1,3})?$/', $route) === 1)
+            ->values()
+            ->all();
+    }
+
+    /**
      * A DNS name for the blocklist. dnsmasq's address=/NAME/ takes a domain,
      * so anything that is not a plain hostname -- crucially anything with a
      * newline, slash or space -- is dropped, which is what stops a "domain"

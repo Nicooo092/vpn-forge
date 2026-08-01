@@ -285,6 +285,11 @@ class ServiceForm
                                 ->label('Data ciphers')
                                 ->default('AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305')
                                 ->dehydratedWhenHidden()
+                                // Interpolated into the root-run server.conf, so
+                                // restrict it to cipher-name characters -- no
+                                // newline can reach a command-executing directive.
+                                ->rule('regex:/^[A-Za-z0-9:_-]+$/')
+                                ->validationMessages(['regex' => 'Cipher names only (letters, digits, dashes), colon-separated.'])
                                 ->helperText('Colon-separated, in order of preference.'),
 
                             Select::make('config.auth_digest')
@@ -354,6 +359,10 @@ class ServiceForm
                                 ->label('Additional routes to push')
                                 ->dehydratedWhenHidden()
                                 ->placeholder('192.168.1.0 255.255.255.0')
+                                // Each route is two IPv4s. The driver drops
+                                // anything else, and this rejects it at entry so
+                                // no element can carry a newline into server.conf.
+                                ->nestedRecursiveRules(['regex:/^(\d{1,3}\.){3}\d{1,3}( (\d{1,3}\.){3}\d{1,3})?$/'])
                                 ->helperText('OpenVPN route syntax: network then netmask.')
                                 ->columnSpanFull(),
                         ]),
