@@ -126,7 +126,17 @@ func (f *httpStreamFactory) parseRequests(stream io.Reader, sourceIP string) {
 			return
 		}
 
-		body, _ := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // cap at 1MB to bound memory
+		// Store at most 16 KB of the body. A monitoring log does not need the
+		// whole payload, and storing up to 1 MB verbatim per request let a
+		// hostile VPN client (traffic is untrusted -- the client controls it)
+		// flood the database and exhaust the disk. Drain the rest so the
+		// stream stays in sync, but keep only the head.
+		const maxStoredBody = 16 << 10
+		body, _ := io.ReadAll(io.LimitReader(req.Body, maxStoredBody))
+		truncated := false
+		if n, _ := io.Copy(io.Discard, io.LimitReader(req.Body, 1<<20)); n > 0 {
+			truncated = true
+		}
 		req.Body.Close()
 
 		users := f.usersFn()
@@ -148,10 +158,11 @@ func (f *httpStreamFactory) parseRequests(stream io.Reader, sourceIP string) {
 			SourceIP:      sourceIP,
 			Host:          req.Host,
 			Detail: map[string]any{
-				"method":  req.Method,
-				"path":    req.URL.RequestURI(),
-				"headers": headers,
-				"body":    string(body),
+				"method":         req.Method,
+				"path":           req.URL.RequestURI(),
+				"headers":        headers,
+				"body":           string(body),
+				"body_truncated": truncated,
 			},
 		})
 	}
