@@ -24,4 +24,20 @@ return [
         'retention_days' => (int) env('VPNFORGE_EXPORT_RETENTION_DAYS', 60),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Update check
+    |--------------------------------------------------------------------------
+    |
+    | The Updates page compares this install against the latest published
+    | commit. Leave repo null to derive it from the git checkout's own origin
+    | remote (so a fork checks itself).
+    |
+    */
+
+    'update' => [
+        'repo' => env('VPNFORGE_REPO'),        // e.g. "owner/name"; null = auto
+        'branch' => env('VPNFORGE_BRANCH', 'main'),
+    ],
+
 ];
