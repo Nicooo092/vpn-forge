@@ -2,7 +2,7 @@
 
 namespace App\Providers\Filament;
 
-use Filament\Auth\MultiFactor\App\AppAuthentication;
+use App\Filament\Auth\SvgAppAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -34,7 +34,7 @@ class AdminPanelProvider extends PanelProvider
             // which on a running install means locking out the only operator.
             // Add `isRequired: true` below once every account has one.
             ->multiFactorAuthentication(
-                AppAuthentication::make()
+                SvgAppAuthentication::make()
                     // Without recovery codes, losing the phone means losing
                     // the panel, and the only way back is editing the
                     // database by hand over SSH.

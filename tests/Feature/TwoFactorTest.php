@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Auth\SvgAppAuthentication;
 use App\Models\User;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
@@ -80,6 +81,29 @@ class TwoFactorTest extends TestCase
         $user = User::factory()->create(['email' => 'operator@example.com']);
 
         $this->assertSame('operator@example.com', $user->getAppAuthenticationHolderName());
+    }
+
+    /**
+     * Filament's own implementation double-encodes this on any server without
+     * the imagick extension: google2fa-qrcode already returns a finished data
+     * URI, and Filament's fallback base64-encodes it again. The browser then
+     * decodes the image back to the literal text "data:image/svg+xml;base64,"
+     * and shows a broken image, with no error anywhere to explain it.
+     */
+    public function test_the_qr_code_decodes_to_an_image_rather_than_another_data_uri(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Filament::setCurrentPanel('admin');
+
+        $uri = SvgAppAuthentication::make()->generateQrCodeDataUri('JBSWY3DPEHPK3PXP');
+
+        $this->assertStringStartsWith('data:image/svg+xml;base64,', $uri);
+
+        $decoded = base64_decode(substr($uri, strlen('data:image/svg+xml;base64,')));
+
+        $this->assertStringNotContainsString('data:image', $decoded, 'the payload was encoded twice');
+        $this->assertStringContainsString('<svg', $decoded);
+        $this->assertStringContainsString('<path', $decoded);
     }
 
     public function test_the_profile_page_is_reachable(): void
