@@ -10,7 +10,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
-        health: '/up',
+        // No public /up health route: it served Laravel's default health view
+        // -- unauthenticated, fingerprinting the stack and pulling external
+        // CDN/font resources -- and nothing here monitors it. Removing it drops
+        // that attack surface entirely.
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
