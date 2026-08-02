@@ -2,11 +2,12 @@
 
 # vpn-forge
 
-**Run your own WireGuard and OpenVPN servers from one panel.**
+**Run your own WireGuard and OpenVPN servers from one clean panel.**
 
-Multiple independent services, users per service, connection and bandwidth stats,
-DNS-level visibility into what was visited, expiry dates, traffic allowances,
-per-service domain blocklists, and one-click backups.
+Independent VPN services, users per service, live connection and bandwidth stats,
+DNS-level visibility into what was visited, per-user speed limits, expiry dates
+and traffic allowances, one-time config links, PDF reports, and one-click backups
+— all self-hosted, on one Ubuntu box.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PHP 8.3](https://img.shields.io/badge/PHP-8.3-777BB4.svg)](composer.json)
@@ -15,9 +16,23 @@ per-service domain blocklists, and one-click backups.
 [![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420.svg)](#quick-start)
 [![WireGuard](https://img.shields.io/badge/WireGuard-88171A.svg)](#)
 [![OpenVPN](https://img.shields.io/badge/OpenVPN-EA7E20.svg)](#)
+[![2FA](https://img.shields.io/badge/2FA-TOTP-2ea44f.svg)](#)
 
 **100% open source.** MIT licensed, no paid tier, no telemetry, no phone-home,
 no account required. Everything it does happens on your server.
+
+</div>
+
+---
+
+<div align="center">
+
+|  |  |  |
+|:--|:--|:--|
+| 🔀 **Two protocols** | 👥 **Users per service** | 📊 **Live stats** |
+| 🌐 **DNS visibility** | 🏷️ **Domain categories** | 🧾 **PDF reports** |
+| 🚦 **Per-user speed limits** | ⏳ **Expiry & quotas** | 🔗 **One-time config links** |
+| 🚫 **One-click blocking** | 🔐 **Two-factor auth** | 💾 **One-click backups** |
 
 </div>
 
@@ -28,6 +43,7 @@ no account required. Everything it does happens on your server.
 - [What you get](#what-you-get)
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
+- [HTTPS & your domain](#https--your-domain)
 - [Server sizing](#server-sizing)
 - [Ports to open](#ports-to-open)
 - [Manual installation](#manual-installation)
@@ -55,12 +71,15 @@ no account required. Everything it does happens on your server.
 | | |
 |---|---|
 | **Config in one click** | A downloadable `.conf` / `.ovpn`, or a QR code to scan straight into the WireGuard app |
+| **One-time share link** | Hand someone a public link they open once to collect their own config — no emailing key material. Single-use (or few-use), time-boxed, and only the token's hash is stored |
+| **Per-user speed limit** | Cap one device's **download and upload** in Mbit/s. Enforced server-side with `tc`/HTB — no re-download needed |
+| **Per-user DNS** | Point one user at their own resolvers (a family filter, a work DNS) instead of the service default |
 | **Expiry dates** | Access ends on its own. Suspended, not revoked, so pushing the date back turns them straight back on |
 | **Traffic allowances** | A limit in gigabytes, counted from a date you can move forward to reset it |
 | **Pause and resume** | Block someone without destroying their keys |
 | **Regenerate keys** | For a lost or stolen device: fresh key material, same person, same history. The old config stops working immediately |
 | **Labels** | Family, work, a client name -- filterable once there are more than a handful |
-| **A page each** | Limits, allowance, recent sessions and most-visited domains for one person, in one place |
+| **A page each** | Limits, allowance, speed cap, recent sessions and most-visited domains for one person, in one place |
 
 ### Visibility
 
@@ -68,17 +87,32 @@ no account required. Everything it does happens on your server.
 |---|---|
 | **Who is connected** | Live status, handshake times, per-user and per-service bandwidth over time |
 | **Full DNS lookups** | Not just the domain: the resolver that was asked, every answer that came back, the CNAME chain, and whether it was served from cache |
+| **Domain categories** | Every lookup tagged — ads & tracking, streaming, social, AI, dev, shopping… — from a local list, no external calls |
+| **Site report** | Per service: category breakdown, most-visited domains and most-active users over 24h / 7d / 30d |
+| **Block in one click** | Add a domain to the service blocklist straight from the traffic log row; it takes effect in seconds |
 | **Plaintext HTTP** | Full content of any non-HTTPS request. Rare in practice, and [read the privacy notes](#privacy-notes) |
 | **Change history** | Who edited what and when. Telemetry the poller writes on its own is excluded, and key material is never recorded |
 | **90-day retention** | Enforced daily, with export to a zip of CSVs at any time |
 
-### Operations
+### Reports & exports
 
 | | |
 |---|---|
+| **PDF site report** | Download a clean, printable "sites visited" report for any service and window |
+| **Scheduled exports** | A PDF per active service, generated on a schedule (weekly by default), kept for a retention window then pruned |
+| **Log export** | Traffic, connection and bandwidth logs as a zip of CSVs, on demand or from the command line |
+| **One place** | Everything generated is listed on an Exports page, ready to download or delete |
+
+### Operations & security
+
+| | |
+|---|---|
+| **Two-factor auth** | App-based TOTP with recovery codes, for a panel that can read everyone's browsing |
+| **Getting-started checklist** | A first-run guide from empty install to a working tunnel that hides itself once you're set up |
+| **Update check** | Compares your install to the latest published version on GitHub and shows the exact SSH command to upgrade — it never redeploys itself |
 | **One-click backups** | Database, WireGuard keys, the OpenVPN certificate authority and all service configuration in one archive |
 | **Admin accounts** | Managed from the panel, not over SSH |
-| **Survives reboots** | Interfaces, NAT rules, resolvers and workers all come back on their own |
+| **Survives reboots** | Interfaces, NAT rules, resolvers, speed limits and workers all come back on their own |
 
 ---
 
@@ -176,6 +210,33 @@ back.
 contents of the connection. A client using DNS-over-HTTPS bypasses it entirely,
 and is meant to.
 
+### How a speed limit is enforced
+
+A per-user cap is applied symmetrically, by the client's tunnel IP, entirely on
+the server — the config the user already has never changes.
+
+```mermaid
+flowchart TB
+    subgraph tun["Tunnel interface · wg0 / tun0"]
+        egress["<b>egress</b> HTB<br/>match dst = client IP<br/>→ download cap"]
+        ingress["<b>ingress</b> qdisc<br/>mirror every packet"]
+    end
+
+    ifb["<b>Per-service IFB device</b><br/>egress HTB<br/>match src = client IP<br/>→ upload cap"]
+
+    Client["Client device"]
+
+    Client -->|traffic in| ingress
+    ingress -->|mirred redirect| ifb
+    egress -->|traffic out| Client
+```
+
+Download is shaped on the tunnel interface's egress by destination IP. Upload
+can't be shaped on ingress directly, so it is mirrored to a per-service IFB
+device and shaped there by source IP. Set no limit and the interface is never
+touched at all. The rules live only in the kernel, so they are rebuilt for every
+active service on boot.
+
 ### Where things live
 
 ```mermaid
@@ -214,6 +275,49 @@ Let's Encrypt. Everything else -- nginx, MariaDB, PHP, WireGuard, OpenVPN, the
 privileged worker, the capture agent -- is installed and started for you.
 
 Then open the panel, create a service, add a user, and scan the QR code.
+
+---
+
+## HTTPS & your domain
+
+The panel holds session cookies, and its backups hold every private key on the
+server — so once it is more than a quick local test, put it behind HTTPS on a
+real domain. Point an `A` record at the server (e.g. `vpn.example.com`), then
+pick one of the two paths below.
+
+### Option A — Let's Encrypt (server is directly reachable)
+
+The one-line installer offers this. To do it by hand, once nginx is serving the
+panel on port 80:
+
+```bash
+apt-get install -y certbot python3-certbot-nginx
+certbot --nginx -d vpn.example.com --agree-tos -m you@example.com --redirect
+```
+
+Renewal is automatic. Then set `SESSION_SECURE_COOKIE=true` and
+`APP_URL=https://vpn.example.com` in `.env`.
+
+### Option B — Behind Cloudflare (proxied)
+
+Keeps the origin IP hidden and gives you Cloudflare's edge in front of the login
+page. Set the DNS record to **Proxied** (orange cloud), then:
+
+1. **SSL/TLS mode → Full (strict).** Anything less leaves the Cloudflare-to-origin
+   leg unencrypted or unverified.
+2. **Origin Certificate.** In Cloudflare → SSL/TLS → Origin Server, create one for
+   `vpn.example.com`, install the certificate and key on the origin, and point
+   nginx's `ssl_certificate` / `ssl_certificate_key` at them.
+3. **Trust the proxy.** vpn-forge already trusts Cloudflare's IP ranges (see
+   `bootstrap/app.php`), so the panel sees the real client IP and marks the
+   connection as secure — which is what lets it set `Secure` cookies and send
+   HSTS. Set `SESSION_SECURE_COOKIE=true` and `APP_URL=https://vpn.example.com`.
+
+> [!TIP]
+> Whichever path you choose, confirm it end-to-end afterwards: the login page
+> should load over `https://`, and a **backup download must never happen over
+> plain HTTP** — the archive contains every key on the box. The Backups page
+> says so in place if the connection is not encrypted.
 
 ---
 
@@ -306,6 +410,12 @@ systemctl disable --now dnsmasq  # only per-service instances are used, not the 
 
 echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-vpnforge.conf
 sysctl -p /etc/sysctl.d/99-vpnforge.conf
+
+# Per-user upload speed limits mirror a tunnel's ingress onto an IFB device.
+# The privileged worker can create those with CAP_NET_ADMIN but cannot load a
+# kernel module, so load ifb here and at every boot.
+echo 'ifb' > /etc/modules-load.d/vpnforge-ifb.conf
+modprobe ifb
 ```
 
 </details>
@@ -595,6 +705,19 @@ DNS-over-HTTPS, or the per-service dnsmasq instance is not running.
 Check the capability actually stuck: `setcap -v cap_net_raw,cap_net_admin=eip
 /usr/local/bin/vpnforge-agent`. Some filesystems strip extended attributes
 silently. Then `journalctl -u vpnforge-agent`.
+
+</details>
+
+<details>
+<summary><b>A per-user speed limit does not apply</b></summary>
+
+The upload half needs the `ifb` kernel module. Confirm it is loaded
+(`lsmod | grep ifb`) and set to load at boot
+(`/etc/modules-load.d/vpnforge-ifb.conf`). Then check the rules are actually on
+the interface: `tc class show dev <interface>` should list a class at the user's
+rate, and `tc class show dev vpnfb<service-id>` the same for upload. If the
+service shows an error after setting a limit, its message names the exact `tc`
+command that failed.
 
 </details>
 
