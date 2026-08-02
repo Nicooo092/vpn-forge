@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class GettingStartedTest extends TestCase
@@ -78,5 +79,14 @@ class GettingStartedTest extends TestCase
         $this->assertTrue($steps[0]['done']);  // service
         $this->assertTrue($steps[1]['done']);  // endpoint
         $this->assertFalse($steps[2]['done']); // user
+    }
+
+    public function test_the_widget_renders_with_native_translatable_labels(): void
+    {
+        Livewire::test(GettingStarted::class)
+            ->assertOk()
+            ->assertSee('Getting started')
+            ->assertSee('Create service')
+            ->assertSee('Set up 2FA');
     }
 }

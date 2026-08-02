@@ -28,5 +28,20 @@
     "devices": "dispositivos",
     "last 24 hours": "últimas 24 h",
     "since last reboot": "desde o último reinício",
-    "unavailable": "indisponível"
+    "unavailable": "indisponível",
+    "Getting started": "Primeiros passos",
+    "A few steps to a working tunnel. This disappears once you're set up.": "Alguns passos para um túnel funcional. Isto desaparece assim que a configuração estiver concluída.",
+    "Create your first VPN service": "Crie o seu primeiro serviço VPN",
+    "A service is one tunnel -- WireGuard or OpenVPN -- with its own subnet and users.": "Um serviço é um túnel — WireGuard ou OpenVPN — com a sua própria sub-rede e utilizadores.",
+    "View service": "Ver serviço",
+    "Create service": "Criar serviço",
+    "Set your server's public address": "Defina o endereço público do seu servidor",
+    "The endpoint host clients connect to. Configs point at CHANGE-ME.example.com until you set it.": "O host a que os clientes se ligam. As configurações apontam para CHANGE-ME.example.com até que o defina.",
+    "Set address": "Definir endereço",
+    "Add your first user": "Adicione o seu primeiro utilizador",
+    "Generates their keys and a downloadable config -- and a QR code for WireGuard.": "Gera as suas chaves e uma configuração transferível — e um código QR para WireGuard.",
+    "Add user": "Adicionar utilizador",
+    "Turn on two-factor authentication": "Ative a autenticação de dois fatores",
+    "This panel can read everyone's browsing history -- a second factor is worth it.": "Este painel pode ler o histórico de navegação de todos — um segundo fator vale a pena.",
+    "Set up 2FA": "Configurar 2FA"
 }

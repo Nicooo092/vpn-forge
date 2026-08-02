@@ -19,6 +19,11 @@ class GettingStarted extends Widget
 {
     protected string $view = 'filament.widgets.getting-started';
 
+    // Cheap to compute (a couple of exists() queries), so render it inline
+    // instead of the widget default of lazy -- no loading skeleton on the very
+    // first screen a new operator sees.
+    protected static bool $isLazy = false;
+
     // Above every other dashboard widget.
     protected static ?int $sort = -1;
 
@@ -51,7 +56,10 @@ class GettingStarted extends Widget
     }
 
     /**
-     * @return array<int, array{title: string, description: string, done: bool, url: string, cta: string}>
+     * English source strings; the view translates them through __(). Icons are
+     * shown while a step is pending -- a green check replaces them once done.
+     *
+     * @return array<int, array{title: string, description: string, done: bool, url: string, cta: string, icon: string}>
      */
     public function getSteps(): array
     {
@@ -67,6 +75,7 @@ class GettingStarted extends Widget
                     ? ServiceResource::getUrl('edit', ['record' => $service])
                     : ServiceResource::getUrl('create'),
                 'cta' => $hasService ? 'View service' : 'Create service',
+                'icon' => 'heroicon-o-server',
             ],
             [
                 'title' => 'Set your server\'s public address',
@@ -76,6 +85,7 @@ class GettingStarted extends Widget
                     ? ServiceResource::getUrl('edit', ['record' => $service])
                     : ServiceResource::getUrl('create'),
                 'cta' => 'Set address',
+                'icon' => 'heroicon-o-globe-alt',
             ],
             [
                 'title' => 'Add your first user',
@@ -85,6 +95,7 @@ class GettingStarted extends Widget
                     ? ServiceResource::getUrl('users', ['record' => $service])
                     : ServiceResource::getUrl('create'),
                 'cta' => 'Add user',
+                'icon' => 'heroicon-o-user-plus',
             ],
             [
                 'title' => 'Turn on two-factor authentication',
@@ -92,6 +103,7 @@ class GettingStarted extends Widget
                 'done' => filled(Auth::user()?->app_authentication_secret),
                 'url' => Filament::getProfileUrl() ?? '#',
                 'cta' => 'Set up 2FA',
+                'icon' => 'heroicon-o-lock-closed',
             ],
         ];
     }

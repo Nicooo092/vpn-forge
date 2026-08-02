@@ -1,39 +1,31 @@
 <x-filament-widgets::widget>
     <x-filament::section>
-        <x-slot name="heading">Getting started</x-slot>
-        <x-slot name="description">A few steps to a working tunnel. This disappears once you're set up.</x-slot>
+        <x-slot name="heading">{{ __('Getting started') }}</x-slot>
+        <x-slot name="description">{{ __("A few steps to a working tunnel. This disappears once you're set up.") }}</x-slot>
 
-        @php($steps = $this->getSteps())
-
-        <div class="divide-y divide-gray-100 dark:divide-white/5">
-            @foreach ($steps as $i => $step)
-                <div class="flex items-center gap-4 py-3">
-                    <div class="shrink-0">
-                        @if ($step['done'])
-                            @svg('heroicon-s-check-circle', 'h-7 w-7 text-success-500')
-                        @else
-                            <span class="flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 text-sm font-semibold text-gray-500 dark:border-white/20 dark:text-gray-400">
-                                {{ $i + 1 }}
-                            </span>
-                        @endif
-                    </div>
-
-                    <div class="min-w-0 flex-1">
-                        <p @class([
-                            'text-sm font-medium',
-                            'text-gray-400 line-through dark:text-gray-500' => $step['done'],
-                        ])>{{ $step['title'] }}</p>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">{{ $step['description'] }}</p>
-                    </div>
+        {{-- Each step is a native compact section (icon + heading + description,
+             self-styled). The button rides in the header via afterHeader. The
+             only inline style is the vertical gap between them: this panel ships
+             no compiled Tailwind, so utility classes like space-y/gap resolve to
+             nothing -- an inline style is the reliable way to space them. --}}
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            @foreach ($this->getSteps() as $i => $step)
+                <x-filament::section
+                    compact
+                    :icon="$step['done'] ? 'heroicon-o-check-circle' : $step['icon']"
+                    :icon-color="$step['done'] ? 'success' : 'primary'"
+                >
+                    <x-slot name="heading">{{ ($i + 1) . '. ' . __($step['title']) }}</x-slot>
+                    <x-slot name="description">{{ __($step['description']) }}</x-slot>
 
                     @unless ($step['done'])
-                        <div class="shrink-0">
+                        <x-slot name="afterHeader">
                             <x-filament::button tag="a" :href="$step['url']" size="sm" color="gray">
-                                {{ $step['cta'] }}
+                                {{ __($step['cta']) }}
                             </x-filament::button>
-                        </div>
+                        </x-slot>
                     @endunless
-                </div>
+                </x-filament::section>
             @endforeach
         </div>
     </x-filament::section>
