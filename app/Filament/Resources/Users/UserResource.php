@@ -23,7 +23,10 @@ class UserResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-user-circle';
 
-    protected static ?string $navigationLabel = 'Admin accounts';
+    public static function getNavigationLabel(): string
+    {
+        return __('Admin accounts');
+    }
 
     protected static ?string $modelLabel = 'admin account';
 

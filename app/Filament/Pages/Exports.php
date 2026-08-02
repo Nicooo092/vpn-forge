@@ -34,7 +34,7 @@ class Exports extends Page
 
     public static function getNavigationLabel(): string
     {
-        return 'Exports';
+        return __('Exports');
     }
 
     public function getScheduleSummary(): string

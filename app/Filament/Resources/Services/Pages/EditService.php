@@ -20,7 +20,7 @@ class EditService extends EditRecord
 
     public static function getNavigationLabel(): string
     {
-        return 'Settings';
+        return __('Settings');
     }
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null

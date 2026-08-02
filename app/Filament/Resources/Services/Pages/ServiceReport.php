@@ -37,7 +37,7 @@ class ServiceReport extends Page
 
     public static function getNavigationLabel(): string
     {
-        return 'Report';
+        return __('Report');
     }
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null

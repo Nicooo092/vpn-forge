@@ -22,7 +22,10 @@ class AdminIpRuleResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-lock-closed';
 
-    protected static ?string $navigationLabel = 'Panel access';
+    public static function getNavigationLabel(): string
+    {
+        return __('Panel access');
+    }
 
     protected static ?string $modelLabel = 'allowed network';
 

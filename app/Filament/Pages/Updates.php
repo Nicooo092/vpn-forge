@@ -27,7 +27,7 @@ class Updates extends Page
 
     public static function getNavigationLabel(): string
     {
-        return 'Updates';
+        return __('Updates');
     }
 
     protected function getHeaderActions(): array

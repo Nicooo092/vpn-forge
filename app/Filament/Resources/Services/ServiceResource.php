@@ -27,6 +27,11 @@ class ServiceResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    public static function getNavigationLabel(): string
+    {
+        return __('Services');
+    }
+
     public static function form(Schema $schema): Schema
     {
         return ServiceForm::configure($schema);

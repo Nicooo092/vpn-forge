@@ -27,12 +27,12 @@ class ServerHealth extends Page
 
     public static function getNavigationLabel(): string
     {
-        return 'Server health';
+        return __('Server health');
     }
 
     public function getTitle(): string|Htmlable
     {
-        return 'Server health';
+        return __('Server health');
     }
 
     /**

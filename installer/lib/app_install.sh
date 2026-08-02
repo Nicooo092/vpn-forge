@@ -29,6 +29,7 @@ install_app() {
   ensure_env_key .env APP_DEBUG false
   ensure_env_key .env APP_URL "${SCHEME}://${APP_HOST}"
   ensure_env_key .env APP_TIMEZONE "${TIMEZONE}"
+  ensure_env_key .env APP_LOCALE "${APP_LANGUAGE}"
   ensure_env_key .env DB_CONNECTION mariadb
   ensure_env_key .env DB_HOST 127.0.0.1
   ensure_env_key .env DB_PORT 3306

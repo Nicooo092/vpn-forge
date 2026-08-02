@@ -69,6 +69,11 @@ gather_input() {
   detected_tz=$(cat /etc/timezone 2>/dev/null || echo "UTC")
   required_input TIMEZONE "Timezone" "$detected_tz"
 
+  # Panel language. The framework UI is fully translated for each of these;
+  # anything unset simply falls back to English.
+  # shellcheck disable=SC2034
+  required_input APP_LANGUAGE "Panel language (en, fr, es, de, it, pt)" "en"
+
   print_brake 60
   output "Summary:"
   output "  Panel URL:  ${SCHEME}://${APP_HOST}"

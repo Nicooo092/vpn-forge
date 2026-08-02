@@ -31,7 +31,7 @@ class ChangeHistory extends Page implements HasTable
 
     public static function getNavigationLabel(): string
     {
-        return 'Change history';
+        return __('Change history');
     }
 
     public function table(Table $table): Table

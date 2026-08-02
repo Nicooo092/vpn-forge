@@ -1,0 +1,17 @@
+{
+    "Services": "Servicios",
+    "Users": "Usuarios",
+    "Connections": "Conexiones",
+    "Traffic logs": "Registros de tráfico",
+    "Report": "Informe",
+    "Settings": "Ajustes",
+    "Admin accounts": "Cuentas de administrador",
+    "Blocklists": "Listas de bloqueo",
+    "Notifications": "Notificaciones",
+    "Exports": "Exportaciones",
+    "Backups": "Copias de seguridad",
+    "Change history": "Historial de cambios",
+    "Server health": "Estado del servidor",
+    "Updates": "Actualizaciones",
+    "Panel access": "Acceso al panel"
+}

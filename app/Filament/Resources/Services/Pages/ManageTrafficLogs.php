@@ -20,7 +20,7 @@ class ManageTrafficLogs extends ManageRelatedRecords
 
     public static function getNavigationLabel(): string
     {
-        return 'Traffic logs';
+        return __('Traffic logs');
     }
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null

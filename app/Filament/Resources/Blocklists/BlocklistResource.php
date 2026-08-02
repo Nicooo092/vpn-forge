@@ -29,7 +29,10 @@ class BlocklistResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shield-check';
 
-    protected static ?string $navigationLabel = 'Blocklists';
+    public static function getNavigationLabel(): string
+    {
+        return __('Blocklists');
+    }
 
     protected static ?string $modelLabel = 'blocklist';
 

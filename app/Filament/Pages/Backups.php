@@ -27,7 +27,7 @@ class Backups extends Page
 
     public static function getNavigationLabel(): string
     {
-        return 'Backups';
+        return __('Backups');
     }
 
     protected function getHeaderActions(): array

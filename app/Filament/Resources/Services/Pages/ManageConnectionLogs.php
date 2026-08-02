@@ -19,7 +19,7 @@ class ManageConnectionLogs extends ManageRelatedRecords
 
     public static function getNavigationLabel(): string
     {
-        return 'Connections';
+        return __('Connections');
     }
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null

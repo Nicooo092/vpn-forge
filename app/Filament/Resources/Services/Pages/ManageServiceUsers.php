@@ -22,7 +22,7 @@ class ManageServiceUsers extends ManageRelatedRecords
 
     public static function getNavigationLabel(): string
     {
-        return 'Users';
+        return __('Users');
     }
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null

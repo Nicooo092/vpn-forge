@@ -28,7 +28,10 @@ class NotificationChannelResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-bell-alert';
 
-    protected static ?string $navigationLabel = 'Notifications';
+    public static function getNavigationLabel(): string
+    {
+        return __('Notifications');
+    }
 
     protected static ?string $modelLabel = 'notification channel';
 
