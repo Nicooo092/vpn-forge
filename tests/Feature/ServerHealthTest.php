@@ -7,6 +7,7 @@ use App\Enums\ServiceUserStatus;
 use App\Enums\Transport;
 use App\Enums\VpnProtocol;
 use App\Filament\Pages\ServerHealth;
+use App\Filament\Widgets\ServerHealthStats;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Models\User;
@@ -58,13 +59,24 @@ class ServerHealthTest extends TestCase
         $this->assertIsInt($snapshot['bandwidth_24h']);
     }
 
-    public function test_the_page_renders(): void
+    public function test_the_page_renders_and_hosts_the_stats_widget(): void
     {
         $this->actingAs(User::factory()->create());
 
         Livewire::test(ServerHealth::class)
             ->assertOk()
+            ->assertSeeLivewire(ServerHealthStats::class);
+    }
+
+    public function test_the_stats_widget_renders_the_native_cards(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ServerHealthStats::class)
+            ->assertOk()
             ->assertSee('CPU load')
-            ->assertSee('Disk');
+            ->assertSee('Memory')
+            ->assertSee('Disk')
+            ->assertSee('Uptime');
     }
 }

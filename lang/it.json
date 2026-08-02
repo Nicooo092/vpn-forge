@@ -13,5 +13,20 @@
     "Change history": "Cronologia modifiche",
     "Server health": "Stato del server",
     "Updates": "Aggiornamenti",
-    "Panel access": "Accesso al pannello"
+    "Panel access": "Accesso al pannello",
+    "CPU load": "Carico CPU",
+    "Memory": "Memoria",
+    "Disk": "Disco",
+    "Connected now": "Connessi ora",
+    "Traffic (24h)": "Traffico (24 h)",
+    "Uptime": "Tempo di attività",
+    ":cores cores · 5 min :m5 · 15 min :m15": ":cores core · 5 min :m5 · 15 min :m15",
+    "5 min :m5 · 15 min :m15": "5 min :m5 · 15 min :m15",
+    ":used of :total used": ":used di :total usati",
+    ":used of :total used · :free free": ":used di :total usati · :free liberi",
+    "active / total": "attivi / totale",
+    "devices": "dispositivi",
+    "last 24 hours": "ultime 24 h",
+    "since last reboot": "dall'ultimo riavvio",
+    "unavailable": "non disponibile"
 }

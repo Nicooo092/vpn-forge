@@ -2,7 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Services\System\SystemHealth;
+use App\Filament\Widgets\ServerHealthStats;
 use BackedEnum;
 use Filament\Pages\Page;
 use Illuminate\Contracts\Support\Htmlable;
@@ -10,15 +10,15 @@ use Illuminate\Contracts\Support\Htmlable;
 /**
  * A live read-out of how the box itself is doing -- load, memory, disk, uptime
  * -- alongside the panel's own counts. Disk especially: the DNS traffic log is
- * write-heavy and the most likely thing to fill it.
+ * write-heavy and the most likely thing to fill it. The read-out itself is the
+ * ServerHealthStats widget (native Filament stat cards); this page just hosts
+ * and titles it.
  */
 class ServerHealth extends Page
 {
     protected string $view = 'filament.pages.server-health';
 
     protected static ?int $navigationSort = 86;
-
-    protected ?string $pollingInterval = '10s';
 
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null
     {
@@ -36,46 +36,17 @@ class ServerHealth extends Page
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<class-string>
      */
-    public function getSnapshot(): array
+    protected function getHeaderWidgets(): array
     {
-        return app(SystemHealth::class)->snapshot();
+        return [ServerHealthStats::class];
     }
 
-    public function formatBytes(?int $bytes): string
+    // One column so the single stats widget spans the full width and its own
+    // grid lays out the cards, rather than being boxed into half the page.
+    public function getHeaderWidgetsColumns(): int|array
     {
-        if ($bytes === null) {
-            return '--';
-        }
-
-        foreach ([[1024 ** 4, 'TB'], [1024 ** 3, 'GB'], [1024 ** 2, 'MB'], [1024, 'KB']] as [$divisor, $unit]) {
-            if ($bytes >= $divisor) {
-                return round($bytes / $divisor, 1).' '.$unit;
-            }
-        }
-
-        return $bytes.' B';
-    }
-
-    public function formatDuration(?int $seconds): string
-    {
-        if ($seconds === null) {
-            return '--';
-        }
-
-        $days = intdiv($seconds, 86400);
-        $hours = intdiv($seconds % 86400, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-
-        if ($days > 0) {
-            return "{$days}d {$hours}h";
-        }
-
-        if ($hours > 0) {
-            return "{$hours}h {$minutes}m";
-        }
-
-        return "{$minutes}m";
+        return 1;
     }
 }
