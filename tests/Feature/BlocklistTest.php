@@ -13,7 +13,6 @@ use App\Services\Blocklist\BlocklistParser;
 use App\Services\Vpn\DnsmasqManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 use Mockery;
 use Tests\TestCase;
 
@@ -93,7 +92,6 @@ class BlocklistTest extends TestCase
 
     public function test_the_refresh_job_fetches_enabled_lists_and_recompiles(): void
     {
-        Process::fake();
         Http::fake([
             'https://good.test/*' => Http::response("0.0.0.0 ads.example.com\n0.0.0.0 track.example.com", 200),
             'https://bad.test/*' => Http::response('nope', 500),
@@ -111,7 +109,14 @@ class BlocklistTest extends TestCase
             ->with(Mockery::on(fn (array $domains) => in_array('ads.example.com', $domains, true)
                 && in_array('track.example.com', $domains, true)));
 
-        (new RefreshBlocklists)->handle($compiler);
+        // The active opted-in service is re-provisioned so its resolver serves
+        // the fresh file.
+        $dnsmasq = Mockery::mock(DnsmasqManager::class);
+        $dnsmasq->shouldReceive('provision')
+            ->once()
+            ->with(Mockery::on(fn (Service $service) => $service->interface_name === 'wg0'));
+
+        (new RefreshBlocklists)->handle($compiler, $dnsmasq);
 
         // The good list is counted; the failing one records why; the disabled
         // one is left untouched.
@@ -121,9 +126,6 @@ class BlocklistTest extends TestCase
 
         $this->assertNotNull($bad->refresh()->last_error);
         $this->assertNull($off->refresh()->last_fetched_at);
-
-        // The active service's resolver is restarted to pick up the new file.
-        Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'restart vpnforge-dnsmasq@wg0'));
     }
 
     protected function tearDown(): void

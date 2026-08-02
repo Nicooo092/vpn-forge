@@ -7,10 +7,10 @@ use App\Models\Blocklist;
 use App\Models\Service;
 use App\Services\Blocklist\BlocklistCompiler;
 use App\Services\Blocklist\BlocklistParser;
+use App\Services\Vpn\DnsmasqManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 use Throwable;
 
 /**
@@ -33,7 +33,7 @@ class RefreshBlocklists implements ShouldQueue
         $this->onQueue('system');
     }
 
-    public function handle(BlocklistCompiler $compiler): void
+    public function handle(BlocklistCompiler $compiler, DnsmasqManager $dnsmasq): void
     {
         $all = [];
 
@@ -64,15 +64,23 @@ class RefreshBlocklists implements ShouldQueue
 
         $compiler->write($merged);
 
-        // Re-read the new file in every resolver that serves it. A restart
-        // rather than a reload: the unit defines no ExecReload, and a restart
-        // is the action already gated by the worker's polkit rule.
+        // Re-provision each opted-in resolver rather than only restarting it:
+        // provisioning is what writes the addn-hosts line into the config in
+        // the first place, so this is self-healing -- a service provisioned
+        // before blocklists existed picks up the line here -- and it restarts
+        // the unit anyway, which is what makes it re-read the new file. One
+        // failing service never blocks the rest.
         Service::query()
             ->where('status', ServiceStatus::Active)
             ->get()
             ->filter(fn (Service $service) => ($service->config['use_blocklists'] ?? true))
-            ->each(function (Service $service) {
-                Process::run(['systemctl', 'restart', "vpnforge-dnsmasq@{$service->interface_name}"]);
+            ->each(function (Service $service) use ($dnsmasq) {
+                try {
+                    $dnsmasq->provision($service);
+                } catch (Throwable) {
+                    // Interface down, unit wedged, etc. -- the next refresh
+                    // (or a config change) will bring it into line.
+                }
             });
     }
 }
