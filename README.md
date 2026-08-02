@@ -30,9 +30,9 @@ no account required. Everything it does happens on your server.
 |  |  |  |
 |:--|:--|:--|
 | 🔀 **Two protocols** | 👥 **Users per service** | 📊 **Live stats** |
-| 🌐 **DNS visibility** | 🏷️ **Domain categories** | 🧾 **PDF reports** |
-| 🚦 **Per-user speed limits** | ⏳ **Expiry & quotas** | 🔗 **One-time config links** |
-| 🚫 **One-click blocking** | 🔐 **Two-factor auth** | 💾 **One-click backups** |
+| 🌐 **DNS visibility & blocklists** | 🕘 **Access hours** | 🚦 **Per-user speed limits** |
+| 🔗 **One-time config links** | 🔔 **Discord / Telegram / ntfy / email alerts** | 🧾 **PDF reports** |
+| 💾 **Auto + offsite backups** | 🔐 **2FA + panel IP allowlist** | 🌍 **6 languages** |
 
 </div>
 
@@ -44,6 +44,7 @@ no account required. Everything it does happens on your server.
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
 - [HTTPS & your domain](#https--your-domain)
+- [Localisation](#localisation)
 - [Server sizing](#server-sizing)
 - [Ports to open](#ports-to-open)
 - [Manual installation](#manual-installation)
@@ -64,6 +65,7 @@ no account required. Everything it does happens on your server.
 | **Simple or advanced setup** | Simple mode asks for a name, a protocol and an address, and derives the rest. Advanced exposes every parameter the drivers actually read |
 | **DNS provider per service** | Cloudflare (three filtering levels), AdGuard, AdGuard Family, Quad9, Google, OpenDNS, or any resolver you name -- including one on your own network |
 | **Domain blocklist** | Per service, subdomains included. Answered locally, so a blocked lookup never reaches an upstream resolver |
+| **Subscription blocklists** | Subscribe to public lists (StevenBlack, OISD, HaGeZi, AdGuard); they refresh daily and are served network-wide by every service that opts in |
 | **Connection test** | Checks the interface, the listening socket, IP forwarding, the NAT rule, the resolver and the endpoint hostname, and says which of them it cannot determine rather than guessing |
 
 ### Users
@@ -74,6 +76,8 @@ no account required. Everything it does happens on your server.
 | **One-time share link** | Hand someone a public link they open once to collect their own config — no emailing key material. Single-use (or few-use), time-boxed, and only the token's hash is stored |
 | **Per-user speed limit** | Cap one device's **download and upload** in Mbit/s. Enforced server-side with `tc`/HTB — no re-download needed |
 | **Per-user DNS** | Point one user at their own resolvers (a family filter, a work DNS) instead of the service default |
+| **Access hours** | Restrict a user to chosen days and a daily time window (may cross midnight). Outside it they are suspended automatically and come back on their own -- a device that only works 16:00-21:00, say |
+| **Device cap** *(OpenVPN)* | Limit how many devices may use one config at the same time; the newest connections over the cap are dropped |
 | **Expiry dates** | Access ends on its own. Suspended, not revoked, so pushing the date back turns them straight back on |
 | **Traffic allowances** | A limit in gigabytes, counted from a date you can move forward to reset it |
 | **Pause and resume** | Block someone without destroying their keys |
@@ -108,9 +112,14 @@ no account required. Everything it does happens on your server.
 | | |
 |---|---|
 | **Two-factor auth** | App-based TOTP with recovery codes, for a panel that can read everyone's browsing |
+| **Notifications** | Discord, Telegram, ntfy or email alerts on the events that matter: a service in error, a failed backup, a user nearing their allowance, an auto-suspension, low disk, a connection from a new network |
+| **Panel IP allowlist** | Restrict the panel to chosen source networks. Loopback is always allowed and an SSH command clears the list, so you can never be permanently locked out |
+| **Server health** | Live CPU load, memory, disk (flagged when it runs low), uptime and 24h traffic, at a glance |
+| **Backups** | One archive of the database and every key. Manual or automatic on a schedule with retention, and optionally streamed **offsite** to any S3-compatible store (AWS, Backblaze B2, Wasabi, MinIO) |
+| **One-click restore** | Restore an archive from the panel -- it imports the database and mirrors the key material back; a reboot then brings the tunnels up on the restored config |
 | **Getting-started checklist** | A first-run guide from empty install to a working tunnel that hides itself once you're set up |
 | **Update check** | Compares your install to the latest published version on GitHub and shows the exact SSH command to upgrade — it never redeploys itself |
-| **One-click backups** | Database, WireGuard keys, the OpenVPN certificate authority and all service configuration in one archive |
+| **Localised** | The panel runs in English, French, Spanish, German, Italian or Portuguese, chosen at install |
 | **Admin accounts** | Managed from the panel, not over SSH |
 | **Survives reboots** | Interfaces, NAT rules, resolvers, speed limits and workers all come back on their own |
 
@@ -321,6 +330,27 @@ page. Set the DNS record to **Proxied** (orange cloud), then:
 
 ---
 
+## Localisation
+
+The panel language is chosen at install (`APP_LOCALE`): **English, French,
+Spanish, German, Italian or Portuguese**. Anything not translated falls back to
+English rather than showing a blank.
+
+Being precise about how much is actually translated (two layers):
+
+| Layer | Coverage |
+|---|---|
+| **Framework interface** — every button, menu control, form field, validation message, table control, modal, pagination and empty state | **100%** in all six languages (Filament's community-maintained locale files) |
+| **vpn-forge's own text** — the navigation and page titles | translated in all six; that is **~15 of roughly 300** app-defined strings, so about **5%** |
+| **vpn-forge's own in-page text** — the ~300 help texts, notification messages, section headings and field labels it adds | still English for now, shown via fallback |
+
+So the great majority of what you *click* is localised (it comes from the
+framework), while most of vpn-forge's own explanatory text is not yet — that is
+the honest picture. Deepening it is just more entries in `lang/<code>.json`; the
+machinery is in place.
+
+---
+
 ## Server sizing
 
 Three things drive what you need, in this order.
@@ -456,6 +486,7 @@ APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://your-domain-or-ip
 APP_TIMEZONE=Your/Timezone
+APP_LOCALE=en                 # or fr, es, de, it, pt
 DB_CONNECTION=mariadb
 DB_HOST=127.0.0.1
 DB_PORT=3306
@@ -465,6 +496,12 @@ DB_PASSWORD=your-app-db-password
 CACHE_STORE=database
 SESSION_DRIVER=database
 QUEUE_CONNECTION=database
+
+# Optional. Automatic backups: off | daily | weekly, how many to keep, and an
+# S3-compatible disk to also upload to (configure the AWS_* keys too).
+# VPNFORGE_BACKUP_SCHEDULE=weekly
+# VPNFORGE_BACKUP_KEEP=7
+# VPNFORGE_BACKUP_OFFSITE_DISK=s3
 ```
 
 > `APP_ENV` and `APP_DEBUG` are not cosmetic. `.env.example` ships Laravel's
