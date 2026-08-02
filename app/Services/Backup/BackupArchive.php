@@ -4,6 +4,7 @@ namespace App\Services\Backup;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use ZipArchive;
 
@@ -68,8 +69,30 @@ class BackupArchive
         return $path;
     }
 
+    /**
+     * Tables deliberately left out of the dump:
+     *  - the queue/cache/session tables, so a restore never resurrects stale
+     *    jobs or clobbers the live queue the restore itself runs on;
+     *  - the high-volume, 90-day-retention log tables, which are not config to
+     *    recover and would balloon the archive (and its memory footprint).
+     * A backup is for the configuration and keys; the log export covers logs.
+     *
+     * @var list<string>
+     */
+    private const EXCLUDED_TABLES = [
+        'jobs', 'job_batches', 'failed_jobs', 'cache', 'cache_locks', 'sessions',
+        'traffic_logs', 'connection_logs', 'bandwidth_samples',
+    ];
+
     private function databaseDump(): string
     {
+        $database = config('database.connections.mariadb.database');
+
+        $ignore = array_map(
+            fn (string $table) => "--ignore-table={$database}.{$table}",
+            self::EXCLUDED_TABLES,
+        );
+
         $result = Process::run([
             'mysqldump',
             '--host='.config('database.connections.mariadb.host'),
@@ -78,7 +101,8 @@ class BackupArchive
             '--password='.config('database.connections.mariadb.password'),
             '--single-transaction',
             '--no-tablespaces',
-            config('database.connections.mariadb.database'),
+            ...$ignore,
+            $database,
         ]);
 
         if (! $result->successful()) {
@@ -177,5 +201,48 @@ class BackupArchive
             ->sortByDesc('created_at')
             ->values()
             ->all();
+    }
+
+    /**
+     * Keep the newest $keep archives, delete the rest. Returns how many were
+     * removed. Only ever touches local archives -- an offsite copy has its own
+     * lifecycle on the remote.
+     */
+    public function prune(int $keep): int
+    {
+        // Never below 1: a keep of 0 (or negative) would otherwise delete every
+        // archive, including the one just created.
+        $stale = array_slice($this->list(), max(1, $keep));
+
+        foreach ($stale as $archive) {
+            File::delete($archive['path']);
+        }
+
+        return count($stale);
+    }
+
+    /**
+     * Copy one archive to a configured filesystem disk (S3-compatible, SFTP,
+     * ...). Streamed rather than read whole into memory, since the archive
+     * carries the database dump and every key on the box.
+     */
+    public function uploadOffsite(string $path, string $disk): void
+    {
+        $handle = fopen($path, 'r');
+
+        if ($handle === false) {
+            throw new RuntimeException("Could not open the archive to upload: {$path}");
+        }
+
+        try {
+            // The disk may be configured with throw=false (the s3 disk is), so
+            // a failed write returns false rather than raising -- turn that back
+            // into an exception so a silently-failed upload is actually noticed.
+            if (Storage::disk($disk)->writeStream('vpnforge/'.basename($path), $handle) === false) {
+                throw new RuntimeException("Offsite upload to disk [{$disk}] failed.");
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 }

@@ -2,6 +2,7 @@
 
 use App\Jobs\Blocklist\RefreshBlocklists;
 use App\Jobs\Maintenance\CheckSystemHealth;
+use App\Jobs\Maintenance\CreateBackup;
 use App\Jobs\Vpn\EnforceAccessWindows;
 use App\Jobs\Vpn\EnforceDeviceLimits;
 use App\Jobs\Vpn\EnforceUserLimits;
@@ -34,6 +35,19 @@ Schedule::command('logs:prune')->daily();
 
 // Disk-space heads-up (deduped to at most once a day inside the job).
 Schedule::job(new CheckSystemHealth)->hourly()->onOneServer();
+
+// Automatic backups. Cadence is config-driven (VPNFORGE_BACKUP_SCHEDULE);
+// 'off' schedules nothing. Retention and offsite upload happen inside the job.
+$backupCadence = config('vpnforge.backup.schedule', 'off');
+
+if ($backupCadence !== 'off') {
+    $backup = Schedule::job(new CreateBackup)->onOneServer();
+
+    match ($backupCadence) {
+        'weekly' => $backup->weeklyOn(0, '03:30'),
+        default => $backup->dailyAt('03:30'),
+    };
+}
 
 // Keep the subscribed blocklists current. Off-peak, and only does anything if
 // there are enabled subscriptions.

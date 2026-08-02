@@ -31,7 +31,10 @@ class CreateBackup implements ShouldQueue
     public function handle(BackupArchive $archive): void
     {
         try {
-            $archive->create();
+            $path = $archive->create();
+
+            // Keep the newest N locally.
+            $archive->prune((int) config('vpnforge.backup.keep', 7));
         } catch (Throwable $e) {
             Log::error('backup failed: '.$e->getMessage());
 
@@ -42,6 +45,24 @@ class CreateBackup implements ShouldQueue
             );
 
             throw $e;
+        }
+
+        // Offsite is best-effort: the local archive already succeeded, so a
+        // failed upload is reported but does not fail the backup.
+        $offsiteDisk = config('vpnforge.backup.offsite_disk');
+
+        if (filled($offsiteDisk)) {
+            try {
+                $archive->uploadOffsite($path, $offsiteDisk);
+            } catch (Throwable $e) {
+                Log::error('offsite backup upload failed: '.$e->getMessage());
+
+                app(Notifier::class)->event(
+                    NotificationEvent::BackupFailed,
+                    'Offsite backup upload failed',
+                    $e->getMessage(),
+                );
+            }
         }
     }
 }

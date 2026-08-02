@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Jobs\Maintenance\CreateBackup;
+use App\Jobs\Maintenance\RestoreBackup;
 use App\Services\Backup\BackupArchive;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -84,6 +85,32 @@ class Backups extends Page
 
             Notification::make()->title('Backup deleted')->success()->send();
         }
+    }
+
+    /**
+     * Overwrites the live database and on-disk key material with the archive's.
+     * Runs on the privileged worker (the web process cannot write the PKI).
+     * Resolves the name against the listing rather than joining it onto a path,
+     * so a browser-supplied value cannot escape the backups directory.
+     */
+    public function restore(string $name): void
+    {
+        $path = $this->resolve($name);
+
+        if ($path === null) {
+            Notification::make()->title('That backup no longer exists')->danger()->send();
+
+            return;
+        }
+
+        RestoreBackup::dispatch($path);
+
+        Notification::make()
+            ->title('Restore started')
+            ->body('Overwriting the database and keys in the background. Running tunnels keep their old config until you reboot -- reboot the server once it finishes so the restored configuration takes effect. You will be alerted (if a notification channel is set) only if it fails.')
+            ->warning()
+            ->persistent()
+            ->send();
     }
 
     /**

@@ -56,4 +56,28 @@ return [
         'link_mbit' => (int) env('VPNFORGE_LINK_MBIT', 1000),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Backups
+    |--------------------------------------------------------------------------
+    |
+    | Automatic backups run on the chosen cadence and keep the newest `keep`
+    | archives, pruning the rest. If `offsite_disk` names a configured
+    | filesystem disk (e.g. the S3-compatible 's3' disk in config/filesystems.php
+    | -- works with AWS, Backblaze B2, Wasabi, MinIO), each new archive is also
+    | uploaded there.
+    |
+    */
+
+    'backup' => [
+        // off | daily | weekly
+        'schedule' => env('VPNFORGE_BACKUP_SCHEDULE', 'off'),
+
+        // How many local archives to keep before pruning the oldest.
+        'keep' => (int) env('VPNFORGE_BACKUP_KEEP', 7),
+
+        // A filesystem disk name to also upload to, or null for local only.
+        'offsite_disk' => env('VPNFORGE_BACKUP_OFFSITE_DISK'),
+    ],
+
 ];

@@ -48,6 +48,16 @@
 
                             <x-filament::button
                                 size="sm"
+                                color="warning"
+                                icon="heroicon-o-arrow-uturn-left"
+                                wire:click="restore('{{ $backup['name'] }}')"
+                                wire:confirm="Restore this backup? This OVERWRITES the current database and every key on the server with the ones in this archive. It cannot be undone. Reboot the server afterwards to bring the tunnels back up."
+                            >
+                                Restore
+                            </x-filament::button>
+
+                            <x-filament::button
+                                size="sm"
                                 color="danger"
                                 icon="heroicon-o-trash"
                                 wire:click="delete('{{ $backup['name'] }}')"
