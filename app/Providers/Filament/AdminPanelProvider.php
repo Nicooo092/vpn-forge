@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Auth\SvgAppAuthentication;
+use App\Http\Middleware\RestrictAdminIps;
 use App\Http\Middleware\SecurityHeaders;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -78,6 +79,8 @@ class AdminPanelProvider extends PanelProvider
                 // The panel runs its own middleware stack rather than the web
                 // group, so the response-hardening headers are attached here.
                 SecurityHeaders::class,
+                // Source-network allowlist (no-op until any rule is added).
+                RestrictAdminIps::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
