@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\Blocklist\RefreshBlocklists;
+use App\Jobs\Vpn\EnforceAccessWindows;
+use App\Jobs\Vpn\EnforceDeviceLimits;
 use App\Jobs\Vpn\EnforceUserLimits;
 use App\Jobs\Vpn\PollAllServiceStatuses;
 use Illuminate\Foundation\Inspiring;
@@ -20,6 +22,12 @@ Schedule::job(new PollAllServiceStatuses)->everyMinute()->onOneServer();
 // allowance is not worth rewriting interface configs over more often than
 // that, and the poll above is what keeps the usage figures current anyway.
 Schedule::job(new EnforceUserLimits)->everyFiveMinutes()->onOneServer();
+
+// Access windows and device caps run every minute, so a cut-off is punctual.
+// Both only rewrite anything on an actual transition (a window closing, an
+// excess connection appearing), so the frequency is cheap.
+Schedule::job(new EnforceAccessWindows)->everyMinute()->onOneServer();
+Schedule::job(new EnforceDeviceLimits)->everyMinute()->onOneServer();
 
 Schedule::command('logs:prune')->daily();
 

@@ -238,8 +238,13 @@ class OpenVpnDriver implements VpnProtocolDriver
             $commonName = $fields[1] ?? null;
             $realAddress = $fields[2] ?? null;
             $tunnelIp = $fields[3] ?? null;
-            $bytesReceived = (int) ($fields[4] ?? 0);
-            $bytesSent = (int) ($fields[5] ?? 0);
+            // [4] is the Virtual IPv6 Address column, so the byte counters are
+            // at [5]/[6], not [4]/[5]. Reading them one column early booked the
+            // (usually empty) IPv6 field as bytes-in and dropped bytes-out
+            // entirely -- wrong bandwidth stats and wrong quota accounting for
+            // every OpenVPN user.
+            $bytesReceived = (int) ($fields[5] ?? 0);
+            $bytesSent = (int) ($fields[6] ?? 0);
 
             if ($tunnelIp === null || $tunnelIp === '') {
                 continue;
@@ -258,6 +263,77 @@ class OpenVpnDriver implements VpnProtocolDriver
         }
 
         return $statuses;
+    }
+
+    /**
+     * Every live connection grouped by the certificate common name it
+     * authenticated with, from the management interface's `status 2` output.
+     * With duplicate-cn on, one common name can hold several connections at
+     * once -- exactly what a per-user device cap needs to count and trim.
+     *
+     * @return array<string, list<array{real_address: string, connected_since: int}>>
+     */
+    public function connectionsByCommonName(Service $service): array
+    {
+        try {
+            return self::parseClientList($this->managementCommand($service, 'status 2'));
+        } catch (RuntimeException) {
+            return [];
+        }
+    }
+
+    /**
+     * Parse the CLIENT_LIST rows of a `status 2` response into connections
+     * grouped by common name. Kept static and pure so it can be asserted on
+     * without a live management socket.
+     *
+     * @return array<string, list<array{real_address: string, connected_since: int}>>
+     */
+    public static function parseClientList(string $response): array
+    {
+        $byCommonName = [];
+
+        foreach (explode("\n", $response) as $line) {
+            if (! str_starts_with($line, 'CLIENT_LIST,')) {
+                continue;
+            }
+
+            // CLIENT_LIST,<cn>,<real address>,<virtual>,<virtual6>,<rx>,<tx>,
+            // <connected since>,<connected since t>,<username>,...
+            $fields = str_getcsv($line);
+            $commonName = $fields[1] ?? '';
+            $realAddress = $fields[2] ?? '';
+            $connectedSince = (int) ($fields[8] ?? 0);
+
+            if ($commonName === '' || $realAddress === '') {
+                continue;
+            }
+
+            $byCommonName[$commonName][] = [
+                'real_address' => $realAddress,
+                'connected_since' => $connectedSince,
+            ];
+        }
+
+        return $byCommonName;
+    }
+
+    /**
+     * Drop one live connection by its real address (the IP:port from the status
+     * output). Sent over the management socket, not a shell -- but the address
+     * is still checked to be a bare host:port, so a value carrying a newline
+     * could never smuggle a second management command in behind it.
+     */
+    public function killConnection(Service $service, string $realAddress): void
+    {
+        // \z, not $: $ would also match just before a trailing newline, which
+        // would weaken the "no newline gets through" guarantee this guard is
+        // here to make.
+        if (preg_match('/\A[0-9a-fA-F:.\[\]]+:\d{1,5}\z/', $realAddress) !== 1) {
+            throw new RuntimeException("Refusing to act on an implausible client address: {$realAddress}");
+        }
+
+        $this->managementCommand($service, "kill {$realAddress}");
     }
 
     public function removeService(Service $service): void

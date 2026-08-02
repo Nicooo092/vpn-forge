@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class ServiceUser extends Model
@@ -56,6 +57,10 @@ class ServiceUser extends Model
         'labels',
         'dns_override',
         'rate_limit_kbps',
+        'access_days',
+        'access_start_minute',
+        'access_end_minute',
+        'max_connections',
         'last_handshake_at',
         'last_connected_at',
         'last_seen_ip',
@@ -74,6 +79,10 @@ class ServiceUser extends Model
             'labels' => 'array',
             'dns_override' => 'array',
             'rate_limit_kbps' => 'integer',
+            'access_days' => 'array',
+            'access_start_minute' => 'integer',
+            'access_end_minute' => 'integer',
+            'max_connections' => 'integer',
             'issued_at' => 'datetime',
             'revoked_at' => 'datetime',
             'last_handshake_at' => 'datetime',
@@ -143,6 +152,89 @@ class ServiceUser extends Model
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    /**
+     * Whether any time-of-day restriction is set. A day list, a time window, or
+     * both -- with neither, access is unrestricted.
+     */
+    public function hasAccessSchedule(): bool
+    {
+        return filled($this->access_days)
+            || ($this->access_start_minute !== null && $this->access_end_minute !== null);
+    }
+
+    /**
+     * Whether the given moment (default now, in the app timezone) falls inside
+     * this user's allowed window. A time window whose start is after its end is
+     * read as spanning midnight (e.g. 22:00-06:00). With no schedule, always
+     * true.
+     */
+    public function isWithinAccessWindow(?Carbon $now = null): bool
+    {
+        if (! $this->hasAccessSchedule()) {
+            return true;
+        }
+
+        $now ??= Carbon::now(config('app.timezone'));
+
+        // Normalise the stored days to ints -- a checkbox list may persist them
+        // as strings -- so a strict comparison against isoWeekday() holds.
+        if (filled($this->access_days)
+            && ! in_array($now->isoWeekday(), array_map('intval', $this->access_days), true)) {
+            return false;
+        }
+
+        // Equal bounds are treated as "all day", not a zero-width window: a
+        // user who picks 00:00-00:00 expecting no time limit must not end up
+        // permanently locked out. (The form also refuses equal times.)
+        if ($this->access_start_minute !== null
+            && $this->access_end_minute !== null
+            && $this->access_start_minute !== $this->access_end_minute) {
+            $minute = $now->hour * 60 + $now->minute;
+            $start = $this->access_start_minute;
+            $end = $this->access_end_minute;
+
+            $within = $start < $end
+                ? ($minute >= $start && $minute < $end)
+                : ($minute >= $start || $minute < $end);
+
+            if (! $within) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * A short human-readable form of the schedule for the panel, or null when
+     * there is none.
+     */
+    public function accessScheduleSummary(): ?string
+    {
+        if (! $this->hasAccessSchedule()) {
+            return null;
+        }
+
+        $names = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
+
+        $parts = [];
+
+        $parts[] = filled($this->access_days)
+            ? collect($this->access_days)->map(fn ($d) => $names[(int) $d] ?? $d)->implode(', ')
+            : 'Every day';
+
+        if ($this->access_start_minute !== null && $this->access_end_minute !== null) {
+            $parts[] = $this->formatMinuteOfDay($this->access_start_minute).'-'.$this->formatMinuteOfDay($this->access_end_minute);
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    private function formatMinuteOfDay(int $minute): string
+    {
+        return sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60);
     }
 
     public function isOverDataLimit(): bool

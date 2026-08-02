@@ -4,12 +4,15 @@ namespace App\Filament\Resources\Services\Schemas;
 
 use App\Enums\VpnProtocol;
 use App\Models\Service;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\TimePicker;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Carbon;
 
 class ServiceUserForm
 {
@@ -95,7 +98,58 @@ class ServiceUserForm
                 ->default(now())
                 ->helperText('Move this forward to reset the allowance without deleting any history.')
                 ->visible(fn (Get $get) => filled($get('data_limit_bytes'))),
+
+            CheckboxList::make('access_days')
+                ->label('Access days')
+                ->options([1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'])
+                ->columns(7)
+                ->gridDirection('row')
+                ->helperText('Leave all unticked for every day. Ticked, access is allowed only on these days. Outside the window the user is suspended automatically and comes back on their own.'),
+
+            // Stored as minutes since midnight (0-1439) so the window is a
+            // couple of cheap integer comparisons at enforcement time.
+            TimePicker::make('access_start_minute')
+                ->label('Access from')
+                ->seconds(false)
+                // Both or neither: a lone bound would otherwise be stored and
+                // then silently ignored at enforcement time.
+                ->requiredWith('access_end_minute')
+                ->formatStateUsing(fn (?int $state) => self::minutesToTime($state))
+                ->dehydrateStateUsing(fn (?string $state) => self::timeToMinutes($state))
+                ->helperText('Server local time. Leave both times empty for no time limit; set "from" later than "until" for a window that crosses midnight, e.g. 22:00-06:00.'),
+
+            TimePicker::make('access_end_minute')
+                ->label('Access until')
+                ->seconds(false)
+                ->requiredWith('access_start_minute')
+                ->formatStateUsing(fn (?int $state) => self::minutesToTime($state))
+                ->dehydrateStateUsing(fn (?string $state) => self::timeToMinutes($state)),
+
+            TextInput::make('max_connections')
+                ->label('Max simultaneous devices')
+                ->numeric()
+                ->minValue(1)
+                // OpenVPN only: a WireGuard peer is single-device by design, so
+                // there is nothing to cap.
+                ->visible($service->protocol === VpnProtocol::OpenVpn)
+                ->helperText('Left empty, no cap. Caps how many devices may use this one config at the same time. Needs "Allow duplicate connections" on the service to permit more than one at all; the excess newest connections are dropped.'),
         ]);
+    }
+
+    private static function minutesToTime(?int $minute): ?string
+    {
+        return $minute === null ? null : sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60);
+    }
+
+    private static function timeToMinutes(?string $state): ?int
+    {
+        if (! filled($state)) {
+            return null;
+        }
+
+        $time = Carbon::parse($state);
+
+        return $time->hour * 60 + $time->minute;
     }
 
     private static function suggestNextTunnelIp(Service $service): string

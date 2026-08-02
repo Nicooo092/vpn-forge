@@ -44,6 +44,22 @@
                     <dt class="text-gray-500 dark:text-gray-400">Speed limit</dt>
                     <dd>{{ $user->rate_limit_kbps ? round($user->rate_limit_kbps / 1000, 2).' Mbit/s (down + up)' : 'unlimited' }}</dd>
                 </div>
+                @if ($user->hasAccessSchedule())
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Access schedule</dt>
+                        <dd>{{ $user->accessScheduleSummary() }}
+                            @unless ($user->isWithinAccessWindow())
+                                <span class="text-gray-500 dark:text-gray-400">(outside window now)</span>
+                            @endunless
+                        </dd>
+                    </div>
+                @endif
+                @if ($user->max_connections)
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Max devices</dt>
+                        <dd>{{ $user->max_connections }}</dd>
+                    </div>
+                @endif
                 @if ($user->labels)
                     <div>
                         <dt class="text-gray-500 dark:text-gray-400">Labels</dt>

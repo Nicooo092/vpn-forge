@@ -7,6 +7,7 @@ use App\Enums\VpnProtocol;
 use App\Filament\Resources\ServiceUsers\ServiceUserResource;
 use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\ApplyServiceConfig;
+use App\Jobs\Vpn\EnforceAccessWindows;
 use App\Jobs\Vpn\RemoveServiceUser;
 use App\Jobs\Vpn\RotateUserKeys;
 use App\Models\ConfigLink;
@@ -129,7 +130,27 @@ class ServiceUsersTable
                 CreateAction::make()
                     ->label('Add user')
                     ->mutateFormDataUsing(self::normaliseUserData(...))
-                    ->after(fn (ServiceUser $record) => AddServiceUser::dispatch($record)),
+                    ->after(function (ServiceUser $record): void {
+                        // Created during a closed access window: start suspended
+                        // so the peer is never briefly added outside permitted
+                        // hours (EnforceAccessWindows resumes them when it
+                        // opens). AddServiceUser still issues their keys/cert;
+                        // for OpenVPN a follow-up apply writes the ccd "disable"
+                        // that AddServiceUser alone does not.
+                        if ($record->hasAccessSchedule() && ! $record->isWithinAccessWindow()) {
+                            $record->forceFill([
+                                'status' => ServiceUserStatus::Suspended,
+                                'suspended_reason' => EnforceAccessWindows::REASON,
+                            ])->save();
+
+                            AddServiceUser::dispatch($record);
+                            ApplyServiceConfig::dispatch($record->service);
+
+                            return;
+                        }
+
+                        AddServiceUser::dispatch($record);
+                    }),
             ])
             // Rendered inline these overflow the row and push the telemetry
             // columns out of view -- collapse them into one dropdown.
@@ -368,6 +389,20 @@ class ServiceUsersTable
                                 return;
                             }
 
+                            // Same reasoning for the access window: resuming now
+                            // would grant out-of-hours access that the
+                            // every-minute enforcement job would revoke again
+                            // within the minute.
+                            if (! $record->isWithinAccessWindow()) {
+                                Notification::make()
+                                    ->title('Outside the access window')
+                                    ->body('This user is only allowed on '.$record->accessScheduleSummary().'. They will come back on their own when the window opens.')
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
                             $record->forceFill([
                                 'status' => ServiceUserStatus::Active,
                                 'suspended_reason' => null,
@@ -435,6 +470,14 @@ class ServiceUsersTable
         // re-apply the whole service config).
         if (array_key_exists('dns_override', $data)) {
             $data['dns_override'] = filled($data['dns_override']) ? array_values($data['dns_override']) : null;
+        }
+
+        // Same for the access-day checkbox list: an empty tick set is "every
+        // day", i.e. no restriction, which the column stores as null.
+        if (array_key_exists('access_days', $data)) {
+            $data['access_days'] = filled($data['access_days'])
+                ? array_values(array_map('intval', $data['access_days']))
+                : null;
         }
 
         return $data;
