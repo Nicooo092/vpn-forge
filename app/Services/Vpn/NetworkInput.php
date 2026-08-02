@@ -95,6 +95,36 @@ class NetworkInput
     }
 
     /**
+     * A base64 WireGuard key (private, public or preshared): exactly 44 chars,
+     * the 43 base64 alphabet plus the trailing '='. Every one of these is
+     * interpolated into /etc/wireguard/<iface>.conf, which wg-quick@ loads as
+     * REAL root at boot -- so a newline in one could inject an [Interface]
+     * PostUp that runs as root. genkey/pubkey/genpsk always produce this shape;
+     * a DB-injected value that does not is refused here at the sink.
+     */
+    public static function assertWireGuardKey(string $value): string
+    {
+        if (preg_match('#^[A-Za-z0-9+/]{43}=$#', $value) !== 1) {
+            throw new InvalidArgumentException('Invalid WireGuard key.');
+        }
+
+        return $value;
+    }
+
+    /**
+     * A user's display name rendered as a `# ...` comment in that same
+     * root-loaded config. The name is free text (spaces, accents), so it is not
+     * rejected -- but every control character, above all CR/LF, is stripped so
+     * it can never break out of the comment line into an injected directive.
+     */
+    public static function sanitizeComment(string $value): string
+    {
+        $stripped = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value) ?? '';
+
+        return trim(mb_substr($stripped, 0, 255));
+    }
+
+    /**
      * A colon-separated OpenVPN cipher list. Cipher names are letters, digits
      * and dashes -- nothing here may carry a newline, quote or space, because
      * OpenVPN's config is line-oriented and has directives (up, script-security,

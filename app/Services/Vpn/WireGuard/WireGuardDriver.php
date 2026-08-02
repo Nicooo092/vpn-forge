@@ -375,22 +375,39 @@ class WireGuardDriver implements VpnProtocolDriver
 
     private function writeConfig(Service $service, string $privateKey): void
     {
+        $contents = $this->buildServerConfig($service, $privateKey);
+        $confPath = $this->confPath($service);
+        $tmpPath = "{$confPath}.new";
+
+        File::put($tmpPath, $contents);
+        chmod($tmpPath, 0600);
+        rename($tmpPath, $confPath);
+    }
+
+    /**
+     * The full /etc/wireguard/<iface>.conf text. Kept apart from writing it so
+     * every interpolated value can be asserted on without touching /etc.
+     *
+     * EVERYTHING here reaches a file wg-quick@<iface> loads as REAL root at
+     * boot, and its PostUp/PreDown lines run through a shell -- so every value
+     * is validated at this sink, not merely in the form, so that no write path
+     * (a job, a direct database edit by a compromised web process) can smuggle
+     * a newline that injects an extra directive or a shell metacharacter that
+     * injects a command. A bad value fails provisioning loudly rather than
+     * producing an injected config.
+     */
+    public function buildServerConfig(Service $service, string $privateKey): string
+    {
         $config = $service->config ?? [];
         $mtu = (int) ($config['mtu'] ?? 1420);
 
-        // These three are interpolated into the PostUp/PreDown lines below,
-        // which wg-quick runs through a shell AS ROOT at boot. Validate at
-        // this sink -- not only in the form -- so no write path (a job, a
-        // direct DB edit) can smuggle a shell metacharacter into a root
-        // command. A bad value fails the provisioning job loudly rather than
-        // producing an injected config.
         $iface = NetworkInput::assertInterfaceName($service->interface_name);
         $subnet = NetworkInput::assertSubnetCidr($service->subnet_cidr);
         $egressInterface = NetworkInput::assertEgressInterface($config['egress_interface'] ?? 'eth0');
 
         $lines = [
             '[Interface]',
-            "PrivateKey = {$privateKey}",
+            'PrivateKey = '.NetworkInput::assertWireGuardKey($privateKey),
             'Address = '.$this->gatewayAddress($service).'/'.$this->prefixLength($service),
             "ListenPort = {$service->listen_port}",
             "MTU = {$mtu}",
@@ -402,24 +419,19 @@ class WireGuardDriver implements VpnProtocolDriver
         $activeUsers = $service->serviceUsers()->where('status', ServiceUserStatus::Active)->get();
 
         foreach ($activeUsers as $user) {
-            // tunnel_ip is interpolated into this root-loaded interface config;
-            // validate it is a bare IPv4 so a newline cannot inject extra peer
-            // or AllowedIPs lines.
+            // The name is a free-text display string, so it is sanitised (CR/LF
+            // and control chars stripped) rather than rejected; the two keys and
+            // the tunnel IP are strict-format, so they are asserted. All four
+            // land in this root-loaded file.
             $lines[] = '[Peer]';
-            $lines[] = "# {$user->name}";
-            $lines[] = "PublicKey = {$user->wg_public_key}";
-            $lines[] = "PresharedKey = {$user->wg_preshared_key}";
+            $lines[] = '# '.NetworkInput::sanitizeComment($user->name);
+            $lines[] = 'PublicKey = '.NetworkInput::assertWireGuardKey($user->wg_public_key);
+            $lines[] = 'PresharedKey = '.NetworkInput::assertWireGuardKey($user->wg_preshared_key);
             $lines[] = 'AllowedIPs = '.NetworkInput::assertTunnelIp($user->tunnel_ip).'/32';
             $lines[] = '';
         }
 
-        $contents = implode("\n", $lines);
-        $confPath = $this->confPath($service);
-        $tmpPath = "{$confPath}.new";
-
-        File::put($tmpPath, $contents);
-        chmod($tmpPath, 0600);
-        rename($tmpPath, $confPath);
+        return implode("\n", $lines);
     }
 
     private function gatewayAddress(Service $service): string

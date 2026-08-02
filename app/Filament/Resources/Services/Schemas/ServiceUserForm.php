@@ -29,6 +29,10 @@ class ServiceUserForm
             TextInput::make('name')
                 ->required()
                 ->maxLength(255)
+                // No control characters (above all newlines): the name is
+                // rendered into the root-loaded WireGuard config. The driver
+                // sanitises it at the sink too -- this just fails it earlier.
+                ->rule('not_regex:/[\x00-\x1f\x7f]/')
                 ->placeholder('phone, laptop, ...'),
 
             TextInput::make('tunnel_ip')
