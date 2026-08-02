@@ -2,12 +2,15 @@
 
 namespace App\Jobs\Vpn;
 
+use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use App\Services\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -43,30 +46,36 @@ class EnforceUserLimits implements ShouldQueue
 
     private function enforce(Service $service): void
     {
-        $toSuspend = $service->serviceUsers()
-            ->where('status', ServiceUserStatus::Active)
-            ->get()
-            ->map(function (ServiceUser $user): ?ServiceUser {
-                $reason = match (true) {
-                    $user->isExpired() => 'expired',
-                    $user->isOverDataLimit() => 'data limit reached',
-                    default => null,
-                };
+        $suspended = false;
 
-                if ($reason === null) {
-                    return null;
-                }
+        foreach ($service->serviceUsers()->where('status', ServiceUserStatus::Active)->get() as $user) {
+            $reason = match (true) {
+                $user->isExpired() => 'expired',
+                $user->isOverDataLimit() => 'data limit reached',
+                default => null,
+            };
 
-                $user->forceFill([
-                    'status' => ServiceUserStatus::Suspended,
-                    'suspended_reason' => $reason,
-                ])->save();
+            if ($reason === null) {
+                $this->maybeWarnApproachingLimit($user);
 
-                return $user;
-            })
-            ->filter();
+                continue;
+            }
 
-        if ($toSuspend->isEmpty()) {
+            $user->forceFill([
+                'status' => ServiceUserStatus::Suspended,
+                'suspended_reason' => $reason,
+            ])->save();
+
+            app(Notifier::class)->event(
+                NotificationEvent::UserSuspended,
+                "{$user->name} suspended",
+                "Reason: {$reason} (service {$service->name}).",
+            );
+
+            $suspended = true;
+        }
+
+        if (! $suspended) {
             return;
         }
 
@@ -74,5 +83,30 @@ class EnforceUserLimits implements ShouldQueue
         // WireGuard this rewrites the peer list, for OpenVPN it writes the
         // client-config-dir entries and cuts the live sessions.
         $service->driver()->applyServiceConfig($service);
+    }
+
+    /**
+     * A one-off heads-up when a user crosses 90% of their allowance, so it can
+     * be raised before they are cut off. De-duplicated per quota window via the
+     * cache -- moving quota_started_at (a reset) changes the key and re-arms it,
+     * so no new column is needed to remember "already warned".
+     */
+    private function maybeWarnApproachingLimit(ServiceUser $user): void
+    {
+        $ratio = $user->dataUsageRatio();
+
+        if ($ratio === null || $ratio < 0.9 || $ratio >= 1.0) {
+            return;
+        }
+
+        $key = "quota-warned:{$user->id}:".($user->quota_started_at?->getTimestamp() ?? 0);
+
+        if (Cache::add($key, true, now()->addDays(120))) {
+            app(Notifier::class)->event(
+                NotificationEvent::QuotaWarning,
+                "{$user->name} near their data allowance",
+                round($ratio * 100).'% used on service '.$user->service->name.'.',
+            );
+        }
     }
 }

@@ -2,7 +2,9 @@
 
 namespace App\Jobs\Maintenance;
 
+use App\Enums\NotificationEvent;
 use App\Services\Backup\BackupArchive;
+use App\Services\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +34,12 @@ class CreateBackup implements ShouldQueue
             $archive->create();
         } catch (Throwable $e) {
             Log::error('backup failed: '.$e->getMessage());
+
+            app(Notifier::class)->event(
+                NotificationEvent::BackupFailed,
+                'Backup failed',
+                $e->getMessage(),
+            );
 
             throw $e;
         }

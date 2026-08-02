@@ -57,7 +57,9 @@ class EnforceAccessWindows implements ShouldQueue
             $within = $user->hasAccessSchedule() ? $user->isWithinAccessWindow() : true;
 
             if ($user->status === ServiceUserStatus::Active && ! $within) {
-                // Clock left the window: suspend.
+                // Clock left the window: suspend. Deliberately no notification
+                // -- a scheduled window closing is routine and would alert
+                // every evening for every scheduled device.
                 $user->forceFill([
                     'status' => ServiceUserStatus::Suspended,
                     'suspended_reason' => self::REASON,

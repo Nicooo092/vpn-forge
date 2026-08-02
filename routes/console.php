@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\Blocklist\RefreshBlocklists;
+use App\Jobs\Maintenance\CheckSystemHealth;
 use App\Jobs\Vpn\EnforceAccessWindows;
 use App\Jobs\Vpn\EnforceDeviceLimits;
 use App\Jobs\Vpn\EnforceUserLimits;
@@ -30,6 +31,9 @@ Schedule::job(new EnforceAccessWindows)->everyMinute()->onOneServer();
 Schedule::job(new EnforceDeviceLimits)->everyMinute()->onOneServer();
 
 Schedule::command('logs:prune')->daily();
+
+// Disk-space heads-up (deduped to at most once a day inside the job).
+Schedule::job(new CheckSystemHealth)->hourly()->onOneServer();
 
 // Keep the subscribed blocklists current. Off-peak, and only does anything if
 // there are enabled subscriptions.

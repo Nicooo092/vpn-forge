@@ -2,10 +2,13 @@
 
 namespace App\Jobs\Vpn;
 
+use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
 use App\Models\BandwidthSample;
 use App\Models\ConnectionLog;
 use App\Models\Service;
+use App\Models\ServiceUser;
+use App\Services\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Carbon;
@@ -80,6 +83,17 @@ class PollAllServiceStatuses implements ShouldQueue
             $openLog = $user->connectionLogs()->whereNull('disconnected_at')->latest('connected_at')->first();
 
             if ($status->connected && $openLog === null) {
+                // Checked before the log is written, so this connection is not
+                // yet in the user's history -- a genuinely new /24 raises an
+                // alert once.
+                if ($status->peerIp !== null && $this->isNewNetwork($user, $status->peerIp)) {
+                    app(Notifier::class)->event(
+                        NotificationEvent::NewLocation,
+                        "{$user->name} connected from a new network",
+                        "{$status->peerIp} (service {$service->name}).",
+                    );
+                }
+
                 $openLog = ConnectionLog::create([
                     'service_user_id' => $user->id,
                     'connected_at' => $status->lastHandshakeAt ?? $now,
@@ -126,5 +140,26 @@ class PollAllServiceStatuses implements ShouldQueue
                 'bytes_out_delta' => $serviceTotalOut,
             ]);
         }
+    }
+
+    /**
+     * Whether this is the first time the user has connected from the peer IP's
+     * /24. Matched at /24 (not the exact address) so an ISP or mobile carrier
+     * shuffling the last octet between reconnects does not read as a new
+     * location every time. IPv6 endpoints are not alerted on.
+     */
+    private function isNewNetwork(ServiceUser $user, string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return false;
+        }
+
+        $parts = explode('.', $ip);
+        // The trailing dot keeps 1.2.3.% from also matching 1.2.30.x. The
+        // octets are digits only (validated above), so nothing LIKE-special
+        // reaches the query.
+        $prefix = "{$parts[0]}.{$parts[1]}.{$parts[2]}.";
+
+        return ! $user->connectionLogs()->where('peer_ip', 'like', $prefix.'%')->exists();
     }
 }
