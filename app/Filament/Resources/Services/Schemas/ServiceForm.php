@@ -424,6 +424,13 @@ class ServiceForm
                                 ->dehydratedWhenHidden()
                                 ->helperText('Blocked for everyone on this service, subdomains included -- entering example.com also covers www.example.com. The lookup is refused by this service\'s own resolver, so it never reaches an upstream. A client using its own DNS server bypasses this entirely.')
                                 ->columnSpanFull(),
+
+                            Toggle::make('config.use_blocklists')
+                                ->label('Apply subscription blocklists')
+                                ->default(true)
+                                ->dehydratedWhenHidden()
+                                ->helperText('Serve the shared, auto-updated blocklists (managed under Blocklists) on this service too. Turn off for a service that should not be filtered.')
+                                ->columnSpanFull(),
                         ]),
                 ]),
         ]);

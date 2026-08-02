@@ -3,6 +3,7 @@
 namespace App\Services\Vpn;
 
 use App\Models\Service;
+use App\Services\Blocklist\BlocklistCompiler;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -29,6 +30,11 @@ class DnsmasqManager
     {
         File::ensureDirectoryExists(self::CONFIG_DIR, 0755);
         File::ensureDirectoryExists(self::LOG_DIR, 0755);
+
+        // The resolver's config references the shared blocklist file via
+        // addn-hosts; make sure it exists (empty is fine) so dnsmasq never
+        // fails to start over a missing file, even before any list is fetched.
+        app(BlocklistCompiler::class)->ensureFile();
 
         $logPath = $this->logPath($service);
 
@@ -90,6 +96,15 @@ class DnsmasqManager
             ->map(fn (string $domain) => "address=/{$domain}/")
             ->implode("\n");
 
+        // Subscription blocklists are compiled to one shared hosts file and
+        // pulled in with addn-hosts, unless this service opts out. A fixed
+        // path whose contents change, so refreshing a list never rewrites this
+        // config -- it just re-reads the file. no-hosts above only disables
+        // /etc/hosts, not addn-hosts.
+        $blocklist = ($service->config['use_blocklists'] ?? true)
+            ? 'addn-hosts='.BlocklistCompiler::FILE
+            : '';
+
         return <<<CONF
         interface={$service->interface_name}
         bind-interfaces
@@ -100,6 +115,7 @@ class DnsmasqManager
         no-hosts
         {$upstreams}
         {$blocked}
+        {$blocklist}
         log-queries=extra
         log-facility={$logPath}
 

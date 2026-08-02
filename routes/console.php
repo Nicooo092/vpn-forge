@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Blocklist\RefreshBlocklists;
 use App\Jobs\Vpn\EnforceUserLimits;
 use App\Jobs\Vpn\PollAllServiceStatuses;
 use Illuminate\Foundation\Inspiring;
@@ -21,6 +22,10 @@ Schedule::job(new PollAllServiceStatuses)->everyMinute()->onOneServer();
 Schedule::job(new EnforceUserLimits)->everyFiveMinutes()->onOneServer();
 
 Schedule::command('logs:prune')->daily();
+
+// Keep the subscribed blocklists current. Off-peak, and only does anything if
+// there are enabled subscriptions.
+Schedule::job(new RefreshBlocklists)->dailyAt('04:30')->onOneServer();
 
 // Scheduled "sites visités" PDF exports. Cadence is config-driven (env
 // VPNFORGE_EXPORT_SCHEDULE) so an operator can turn it off or change it

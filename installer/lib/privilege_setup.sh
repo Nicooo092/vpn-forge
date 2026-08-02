@@ -56,6 +56,14 @@ setup_privileged_worker() {
   chmod 770 /etc/vpnforge/dnsmasq
   chmod g+s /etc/vpnforge/dnsmasq
 
+  # Compiled subscription blocklists: written by the worker, read by every
+  # resolver. dnsmasq reads its addn-hosts file as root at start, so 755 with
+  # world-read is enough -- unlike dnsmasq/ this holds no config the worker
+  # needs to keep private.
+  mkdir -p /etc/vpnforge/blocklists
+  chown vpnforge-worker:vpnforge-worker /etc/vpnforge/blocklists
+  chmod 755 /etc/vpnforge/blocklists
+
   # /var/log/vpnforge: DnsmasqManager (running as vpnforge-worker) creates
   # each service's DNS log file here before dnsmasq itself ever starts, so
   # the worker needs *write* on this directory -- that means group write,
