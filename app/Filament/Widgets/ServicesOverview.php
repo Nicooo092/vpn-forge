@@ -24,7 +24,7 @@ class ServicesOverview extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->heading('Services')
+            ->heading(__('Services'))
             ->query(
                 Service::query()
                     ->withCount([
@@ -48,26 +48,26 @@ class ServicesOverview extends TableWidget
                         : null)
                     ->tooltip(fn (Service $record) => $record->last_error),
                 TextColumn::make('connected_count')
-                    ->label('Connected')
+                    ->label(__('Connected'))
                     ->badge()
                     ->color(fn (Service $record) => $record->connected_count > 0 ? 'success' : 'gray')
                     ->formatStateUsing(fn (Service $record) => "{$record->connected_count} / {$record->users_count}"),
                 TextColumn::make('endpoint')
-                    ->label('Endpoint')
+                    ->label(__('Endpoint'))
                     ->fontFamily('mono')
-                    ->placeholder('not set')
+                    ->placeholder(__('not set'))
                     ->state(fn (Service $record) => isset($record->config['endpoint_host'])
                         ? $record->config['endpoint_host'].':'.$record->listen_port
                         : null)
                     ->copyable(),
                 TextColumn::make('subnet_cidr')
-                    ->label('Subnet')
+                    ->label(__('Subnet'))
                     ->fontFamily('mono'),
             ])
             ->recordUrl(fn (Service $record) => ServiceResource::getUrl('edit', ['record' => $record]))
             ->emptyStateIcon('heroicon-o-shield-check')
-            ->emptyStateHeading('No services yet')
-            ->emptyStateDescription('Create one from the Services page to provision a WireGuard or OpenVPN server.')
+            ->emptyStateHeading(__('No services yet'))
+            ->emptyStateDescription(__('Create one from the Services page to provision a WireGuard or OpenVPN server.'))
             ->paginated(false)
             ->poll('30s');
     }

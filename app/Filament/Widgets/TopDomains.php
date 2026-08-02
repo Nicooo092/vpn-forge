@@ -20,7 +20,7 @@ class TopDomains extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->heading('Top domains (24h)')
+            ->heading(__('Top domains (24h)'))
             ->query(
                 TrafficLog::query()
                     ->where('kind', TrafficLogKind::Dns)
@@ -35,21 +35,21 @@ class TopDomains extends TableWidget
             )
             ->columns([
                 TextColumn::make('host')
-                    ->label('Domain')
+                    ->label(__('Domain'))
                     ->weight('bold')
                     ->limit(40),
                 TextColumn::make('hits')
-                    ->label('Queries')
+                    ->label(__('Queries'))
                     ->badge()
                     ->color('gray'),
                 TextColumn::make('last_seen')
-                    ->label('Last seen')
+                    ->label(__('Last seen'))
                     ->since()
                     ->state(fn ($record) => Carbon::parse($record->last_seen)),
             ])
             ->emptyStateIcon('heroicon-o-globe-alt')
-            ->emptyStateHeading('No DNS activity yet')
-            ->emptyStateDescription('Queries appear once a user with logging enabled connects, provided clients are pointed at this service\'s own resolver.')
+            ->emptyStateHeading(__('No DNS activity yet'))
+            ->emptyStateDescription(__('Queries appear once a user with logging enabled connects, provided clients are pointed at this service\'s own resolver.'))
             ->paginated(false)
             ->poll('30s');
     }

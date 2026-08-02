@@ -17,7 +17,7 @@ class ManageUsers extends ManageRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make()->label('Add account'),
+            CreateAction::make()->label(__('Add account')),
         ];
     }
 
@@ -32,7 +32,7 @@ class ManageUsers extends ManageRecords
                     // one over SSH.
                     ->hidden(fn (User $record) => User::count() <= 1)
                     ->modalDescription(fn (User $record) => $record->is(auth()->user())
-                        ? 'This is the account you are signed in with. Deleting it signs you out immediately.'
+                        ? __('This is the account you are signed in with. Deleting it signs you out immediately.')
                         : null),
             ]);
     }

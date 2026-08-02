@@ -21,7 +21,7 @@ class ManageNotificationChannels extends ManageRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make()->label('Add channel'),
+            CreateAction::make()->label(__('Add channel')),
         ];
     }
 
@@ -32,21 +32,21 @@ class ManageNotificationChannels extends ManageRecords
                 // Sent inline (not queued) so the operator gets the pass/fail
                 // right here rather than having to go and check the channel.
                 Action::make('test')
-                    ->label('Send test')
+                    ->label(__('Send test'))
                     ->icon('heroicon-o-paper-airplane')
                     ->action(function (NotificationChannel $record): void {
                         try {
                             app(TransportFactory::class)
                                 ->for($record->type)
-                                ->send($record->config ?? [], 'vpn-forge test', 'This is a test alert from vpn-forge. If you can read it, the channel works.');
+                                ->send($record->config ?? [], __('vpn-forge test'), __('This is a test alert from vpn-forge. If you can read it, the channel works.'));
 
                             $record->forceFill(['last_error' => null])->save();
 
-                            Notification::make()->title('Test sent')->success()->send();
+                            Notification::make()->title(__('Test sent'))->success()->send();
                         } catch (Throwable $e) {
                             $record->forceFill(['last_error' => $e->getMessage()])->save();
 
-                            Notification::make()->title('Test failed')->body($e->getMessage())->danger()->send();
+                            Notification::make()->title(__('Test failed'))->body($e->getMessage())->danger()->send();
                         }
                     }),
                 EditAction::make(),

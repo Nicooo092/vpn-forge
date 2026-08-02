@@ -37,30 +37,30 @@ class TrafficLogsTable
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('serviceUser.name')
-                    ->label('User')
-                    ->placeholder('unknown peer'),
+                    ->label(__('User'))
+                    ->placeholder(__('unknown peer')),
                 TextColumn::make('occurred_at')
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('source_ip')
-                    ->label('Source IP')
+                    ->label(__('Source IP'))
                     ->fontFamily('mono')
                     ->placeholder('--')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('host')
-                    ->label('Domain')
+                    ->label(__('Domain'))
                     ->searchable()
-                    ->placeholder('not resolved')
+                    ->placeholder(__('not resolved'))
                     ->limit(50),
                 TextColumn::make('category')
-                    ->label('Category')
+                    ->label(__('Category'))
                     ->badge()
                     ->state(fn (TrafficLog $record) => DomainCategory::for($record->host))
                     ->toggleable(),
                 // The two legs beyond the client's request: who the server
                 // asked, and what came back.
                 TextColumn::make('via')
-                    ->label('Resolved via')
+                    ->label(__('Resolved via'))
                     ->state(fn (TrafficLog $record) => match (true) {
                         ($record->detail['cached'] ?? false) === true => 'cache',
                         isset($record->detail['forwarded_to'][0]) => implode(', ', $record->detail['forwarded_to']),
@@ -70,16 +70,16 @@ class TrafficLogsTable
                     ->color(fn (?string $state) => $state === 'cache' ? 'gray' : 'info')
                     ->placeholder('--'),
                 TextColumn::make('answer')
-                    ->label('Answer')
+                    ->label(__('Answer'))
                     ->fontFamily('mono')
                     ->state(fn (TrafficLog $record) => $record->detail['answers'][0] ?? null)
                     ->description(fn (TrafficLog $record) => count($record->detail['answers'] ?? []) > 1
-                        ? '+'.(count($record->detail['answers']) - 1).' more'
+                        ? __('+:count more', ['count' => count($record->detail['answers']) - 1])
                         : null)
                     // The remaining records and the alias chain, without
                     // spending a column on either.
                     ->tooltip(fn (TrafficLog $record) => self::answerTooltip($record))
-                    ->placeholder('no answer'),
+                    ->placeholder(__('no answer')),
                 // ->state(), not ->formatStateUsing(): detail is a json column
                 // cast to an array, and Filament runs the formatter once per
                 // array element and joins the results with ", " -- so a DNS
@@ -89,9 +89,9 @@ class TrafficLogsTable
                 // the formatter never fired and the cell came out empty.
                 // Computing the state directly sidesteps both.
                 TextColumn::make('summary')
-                    ->label('Summary')
+                    ->label(__('Summary'))
                     ->state(fn (TrafficLog $record) => self::summarize($record))
-                    ->placeholder('no detail recorded')
+                    ->placeholder(__('no detail recorded'))
                     ->limit(60)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -100,11 +100,11 @@ class TrafficLogsTable
             ])
             ->recordActions([
                 Action::make('view_detail')
-                    ->label('View')
+                    ->label(__('View'))
                     ->icon('heroicon-o-eye')
                     ->schema(fn (TrafficLog $record) => [
                         TextEntry::make('detail_json')
-                            ->label('Full detail')
+                            ->label(__('Full detail'))
                             ->state(json_encode($record->detail, JSON_PRETTY_PRINT))
                             ->fontFamily('mono'),
                     ])
@@ -112,14 +112,14 @@ class TrafficLogsTable
                 // Block a domain straight from the log line it appears on --
                 // adds it to the service blocklist and re-applies the resolver.
                 Action::make('block')
-                    ->label('Block')
+                    ->label(__('Block'))
                     ->icon('heroicon-o-no-symbol')
                     ->color('danger')
                     ->visible(fn (TrafficLog $record) => filled($record->host)
                         && ! in_array(strtolower($record->host), array_map('strtolower', $service->config['blocked_domains'] ?? []), true))
                     ->requiresConfirmation()
-                    ->modalHeading(fn (TrafficLog $record) => "Block {$record->host}?")
-                    ->modalDescription('Adds this domain (and its subdomains) to the blocklist for everyone on this service. Applied within a few seconds.')
+                    ->modalHeading(fn (TrafficLog $record) => __('Block :host?', ['host' => $record->host]))
+                    ->modalDescription(__('Adds this domain (and its subdomains) to the blocklist for everyone on this service. Applied within a few seconds.'))
                     ->action(function (TrafficLog $record) use ($service) {
                         $service->refresh();
                         $config = $service->config ?? [];
@@ -132,15 +132,15 @@ class TrafficLogsTable
                         ApplyServiceConfig::dispatch($service);
 
                         Notification::make()
-                            ->title("Blocking {$record->host}")
-                            ->body('Applying to the resolver in the background.')
+                            ->title(__('Blocking :host', ['host' => $record->host]))
+                            ->body(__('Applying to the resolver in the background.'))
                             ->success()
                             ->send();
                     }),
             ])
             ->headerActions([
                 Action::make('export')
-                    ->label('Export logs')
+                    ->label(__('Export logs'))
                     ->icon('heroicon-o-arrow-down-tray')
                     ->action(function () use ($service) {
                         $zipPath = app(LogExporter::class)->exportZip($service->id);
@@ -151,7 +151,7 @@ class TrafficLogsTable
                     }),
             ])
             ->emptyStateIcon('heroicon-o-document-magnifying-glass')
-            ->emptyStateHeading('No traffic logs')
+            ->emptyStateHeading(__('No traffic logs'))
             // Generic advice here is useless: the overwhelmingly common reason
             // this table stays empty is that logging is switched off for the
             // very users being watched, and the panel is the only thing that
@@ -166,17 +166,16 @@ class TrafficLogsTable
         $active = $service->serviceUsers()->where('status', ServiceUserStatus::Active)->get();
 
         if ($active->isEmpty()) {
-            return 'This service has no active users yet. Add one on the Users page.';
+            return __('This service has no active users yet. Add one on the Users page.');
         }
 
         $silenced = $active->reject(fn (ServiceUser $user) => $user->loggingEffective());
 
         if ($silenced->isNotEmpty()) {
-            return 'Logging is switched off for '.$silenced->pluck('name')->join(', ', ' and ')
-                .', so nothing they do is recorded. Change it on the Users page: edit the user and set Logging to "Force on".';
+            return __('Logging is switched off for :users, so nothing they do is recorded. Change it on the Users page: edit the user and set Logging to "Force on".', ['users' => $silenced->pluck('name')->join(', ', ' and ')]);
         }
 
-        return 'Rows appear once a user connects and resolves a domain. Their device has to be using the config this panel generates, since that is what points it at this service\'s resolver -- a config downloaded before the resolver was set still names a public one.';
+        return __('Rows appear once a user connects and resolves a domain. Their device has to be using the config this panel generates, since that is what points it at this service\'s resolver -- a config downloaded before the resolver was set still names a public one.');
     }
 
     private static function answerTooltip(TrafficLog $record): ?string
@@ -191,7 +190,7 @@ class TrafficLogsTable
         }
 
         if ($chain !== []) {
-            $parts[] = 'via '.implode(' -> ', $chain);
+            $parts[] = __('via :chain', ['chain' => implode(' -> ', $chain)]);
         }
 
         return $parts === [] ? null : implode(' | ', $parts);
@@ -221,14 +220,14 @@ class TrafficLogsTable
         $answers = $detail['answers'] ?? [];
         $chain = $detail['cname_chain'] ?? [];
 
-        $summary = ($detail['query_type'] ?? '?').' query';
+        $summary = __(':type query', ['type' => $detail['query_type'] ?? '?']);
 
         if ($chain !== []) {
-            $summary .= ' via '.implode(' -> ', $chain);
+            $summary .= ' '.__('via :chain', ['chain' => implode(' -> ', $chain)]);
         }
 
         return $summary.', '.($answers === []
-            ? 'no answer'
-            : count($answers).' '.(count($answers) === 1 ? 'answer' : 'answers'));
+            ? __('no answer')
+            : count($answers).' '.(count($answers) === 1 ? __('answer') : __('answers')));
     }
 }

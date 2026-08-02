@@ -40,24 +40,24 @@ class ChangeHistory extends Page implements HasTable
             ->query(AuditEvent::query()->with('user'))
             ->columns([
                 TextColumn::make('created_at')
-                    ->label('When')
+                    ->label(__('When'))
                     ->dateTime()
                     ->since()
                     ->tooltip(fn (AuditEvent $record) => $record->created_at?->toDayDateTimeString())
                     ->sortable(),
                 TextColumn::make('user.name')
-                    ->label('By')
+                    ->label(__('By'))
                     // Background jobs run with nobody signed in, and saying
                     // so is more honest than pinning it on whoever happened
                     // to be logged in last.
-                    ->placeholder('automatic')
+                    ->placeholder(__('automatic'))
                     ->searchable(),
                 TextColumn::make('auditable_type')
-                    ->label('What')
+                    ->label(__('What'))
                     ->formatStateUsing(fn (string $state) => class_basename($state))
                     ->badge(),
                 TextColumn::make('subject')
-                    ->label('Which')
+                    ->label(__('Which'))
                     ->placeholder('--')
                     ->searchable(),
                 TextColumn::make('event')
@@ -68,7 +68,7 @@ class ChangeHistory extends Page implements HasTable
                         default => 'gray',
                     }),
                 TextColumn::make('summary')
-                    ->label('Change')
+                    ->label(__('Change'))
                     ->state(fn (AuditEvent $record) => $record->summary())
                     ->placeholder('--')
                     ->limit(70)
@@ -76,32 +76,32 @@ class ChangeHistory extends Page implements HasTable
             ])
             ->filters([
                 SelectFilter::make('event')->options([
-                    'created' => 'Created',
-                    'updated' => 'Updated',
-                    'deleted' => 'Deleted',
+                    'created' => __('Created'),
+                    'updated' => __('Updated'),
+                    'deleted' => __('Deleted'),
                 ]),
                 SelectFilter::make('auditable_type')
-                    ->label('Type')
+                    ->label(__('Type'))
                     ->options([
-                        Service::class => 'Service',
-                        ServiceUser::class => 'User',
+                        Service::class => __('Service'),
+                        ServiceUser::class => __('User'),
                     ]),
             ])
             ->recordActions([
                 Action::make('detail')
-                    ->label('View')
+                    ->label(__('View'))
                     ->icon('heroicon-o-eye')
                     ->schema(fn (AuditEvent $record) => [
                         TextEntry::make('detail')
-                            ->label('Recorded change')
+                            ->label(__('Recorded change'))
                             ->state(json_encode($record->change_set, JSON_PRETTY_PRINT))
                             ->fontFamily('mono'),
                     ])
                     ->modalSubmitAction(false),
             ])
             ->emptyStateIcon('heroicon-o-clock')
-            ->emptyStateHeading('Nothing recorded yet')
-            ->emptyStateDescription('Edits to services and users appear here. Telemetry the poller writes on its own is deliberately left out, and key material is never recorded.')
+            ->emptyStateHeading(__('Nothing recorded yet'))
+            ->emptyStateDescription(__('Edits to services and users appear here. Telemetry the poller writes on its own is deliberately left out, and key material is never recorded.'))
             ->defaultSort('created_at', 'desc')
             ->poll('30s');
     }

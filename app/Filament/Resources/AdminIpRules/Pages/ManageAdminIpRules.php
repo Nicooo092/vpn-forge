@@ -15,9 +15,7 @@ class ManageAdminIpRules extends ManageRecords
 
     public function getSubheading(): ?string
     {
-        return 'Once any rule exists, only listed networks — and loopback — can reach the panel. '
-            .'Your current address is '.request()->ip().'. '
-            .'Locked out (e.g. your home IP changed)? Run  php artisan vpnforge:ip-allowlist-clear  over SSH to reset.';
+        return __('Once any rule exists, only listed networks — and loopback — can reach the panel. Your current address is :ip. Locked out (e.g. your home IP changed)? Run  php artisan vpnforge:ip-allowlist-clear  over SSH to reset.', ['ip' => request()->ip()]);
     }
 
     protected function getHeaderActions(): array
@@ -25,22 +23,22 @@ class ManageAdminIpRules extends ManageRecords
         return [
             // The most common (and safest) first rule: the address you're on now.
             Action::make('addCurrent')
-                ->label('Allow my current IP')
+                ->label(__('Allow my current IP'))
                 ->icon('heroicon-o-plus')
                 ->color('gray')
                 ->action(function (): void {
                     $ip = request()->ip();
 
-                    AdminIpRule::firstOrCreate(['cidr' => $ip], ['label' => 'Added from the panel']);
+                    AdminIpRule::firstOrCreate(['cidr' => $ip], ['label' => __('Added from the panel')]);
 
                     Notification::make()
-                        ->title("Allowed {$ip}")
-                        ->body('Add any other networks you need before relying on the restriction.')
+                        ->title(__('Allowed :ip', ['ip' => $ip]))
+                        ->body(__('Add any other networks you need before relying on the restriction.'))
                         ->success()
                         ->send();
                 }),
 
-            CreateAction::make()->label('Add network'),
+            CreateAction::make()->label(__('Add network')),
         ];
     }
 }

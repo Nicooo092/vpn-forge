@@ -42,7 +42,7 @@ class UserResource extends Resource
                 ->maxLength(255),
 
             TextInput::make('email')
-                ->label('Email address')
+                ->label(__('Email address'))
                 ->email()
                 ->required()
                 ->unique(ignoreRecord: true)
@@ -58,10 +58,10 @@ class UserResource extends Resource
                 ->required(fn (string $operation) => $operation === 'create')
                 ->dehydrated(fn (?string $state) => filled($state))
                 ->dehydrateStateUsing(fn (string $state) => Hash::make($state))
-                ->helperText('At least 12 characters. Leave blank when editing to keep the current password.'),
+                ->helperText(__('At least 12 characters. Leave blank when editing to keep the current password.')),
 
             TextInput::make('password_confirmation')
-                ->label('Confirm password')
+                ->label(__('Confirm password'))
                 ->password()
                 ->revealable()
                 ->dehydrated(false)
@@ -77,15 +77,15 @@ class UserResource extends Resource
                     ->searchable()
                     ->weight('bold'),
                 TextColumn::make('email')
-                    ->label('Email address')
+                    ->label(__('Email address'))
                     ->searchable()
                     ->copyable(),
                 TextColumn::make('created_at')
-                    ->label('Added')
+                    ->label(__('Added'))
                     ->since()
                     ->sortable(),
             ])
-            ->emptyStateHeading('No accounts')
+            ->emptyStateHeading(__('No accounts'))
             ->defaultSort('name');
     }
 

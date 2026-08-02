@@ -43,23 +43,23 @@ class ServicesTable
                         ? $record->last_error
                         : null),
                 TextColumn::make('interface_name')
-                    ->label('Interface')
+                    ->label(__('Interface'))
                     ->fontFamily('mono')
                     ->copyable(),
                 TextColumn::make('subnet_cidr')
-                    ->label('Subnet')
+                    ->label(__('Subnet'))
                     ->fontFamily('mono'),
                 TextColumn::make('listen_port')
-                    ->label('Port')
+                    ->label(__('Port'))
                     ->formatStateUsing(fn ($record) => "{$record->listen_port}/{$record->transport->value}")
                     ->sortable(),
                 TextColumn::make('service_users_count')
-                    ->label('Users')
+                    ->label(__('Users'))
                     ->counts('serviceUsers')
                     ->badge()
                     ->color('gray'),
                 IconColumn::make('logging_enabled_default')
-                    ->label('Logging (default)')
+                    ->label(__('Logging (default)'))
                     ->boolean(),
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -74,12 +74,12 @@ class ServicesTable
                 ActionGroup::make([
                     EditAction::make(),
                     Action::make('test')
-                        ->label('Test connection')
+                        ->label(__('Test connection'))
                         ->icon('heroicon-o-signal')
-                        ->modalHeading(fn (Service $record) => "Diagnostics for {$record->name}")
+                        ->modalHeading(fn (Service $record) => __('Diagnostics for :name', ['name' => $record->name]))
                         ->modalWidth(Width::TwoExtraLarge)
                         ->modalSubmitAction(false)
-                        ->modalCancelActionLabel('Close')
+                        ->modalCancelActionLabel(__('Close'))
                         ->modalContent(fn (Service $record) => view('filament.connectivity-check', [
                             'checks' => app(ConnectivityCheck::class)->run($record),
                             'port' => $record->listen_port,
@@ -92,18 +92,18 @@ class ServicesTable
                     // finishes the missing steps without disturbing a tunnel
                     // that is already up.
                     Action::make('retry')
-                        ->label('Retry provisioning')
+                        ->label(__('Retry provisioning'))
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
-                        ->modalDescription('Re-runs provisioning for this service. Existing interfaces and connected clients are left alone.')
+                        ->modalDescription(__('Re-runs provisioning for this service. Existing interfaces and connected clients are left alone.'))
                         ->visible(fn (Service $record) => $record->status === ServiceStatus::Error)
                         ->action(function (Service $record) {
                             ProvisionService::dispatch($record);
 
                             Notification::make()
-                                ->title('Retrying provisioning')
-                                ->body('Running in the background -- the status will update here on its own.')
+                                ->title(__('Retrying provisioning'))
+                                ->body(__('Running in the background -- the status will update here on its own.'))
                                 ->success()
                                 ->send();
                         }),
@@ -113,25 +113,25 @@ class ServicesTable
                     // instead, which deletes the record itself once teardown
                     // has actually completed.
                     Action::make('remove')
-                        ->label('Remove')
+                        ->label(__('Remove'))
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
-                        ->modalDescription('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.')
+                        ->modalDescription(__('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.'))
                         ->action(function (Service $record) {
                             RemoveService::dispatch($record);
 
                             Notification::make()
-                                ->title('Removing service')
-                                ->body('Tearing down in the background -- it will disappear from this list once finished.')
+                                ->title(__('Removing service'))
+                                ->body(__('Tearing down in the background -- it will disappear from this list once finished.'))
                                 ->success()
                                 ->send();
                         }),
                 ]),
             ])
             ->emptyStateIcon('heroicon-o-shield-check')
-            ->emptyStateHeading('No VPN services yet')
-            ->emptyStateDescription('Create one to provision a WireGuard or OpenVPN server, then add users to it.')
+            ->emptyStateHeading(__('No VPN services yet'))
+            ->emptyStateDescription(__('Create one to provision a WireGuard or OpenVPN server, then add users to it.'))
             // Status moves through provisioning -> active/error in a background
             // job, so the row has to refresh itself or it looks stuck.
             ->poll('10s')

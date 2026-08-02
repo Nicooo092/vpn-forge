@@ -37,13 +37,18 @@ class Exports extends Page
         return __('Exports');
     }
 
+    public function getTitle(): string|Htmlable
+    {
+        return __('Exports');
+    }
+
     public function getScheduleSummary(): string
     {
         return match (config('vpnforge.exports.schedule', 'weekly')) {
-            'off' => 'Automatic reports are off.',
-            'daily' => 'A report for each active service is generated every day.',
-            'monthly' => 'A report for each active service is generated on the 1st of each month.',
-            default => 'A report for each active service is generated every Monday.',
+            'off' => __('Automatic reports are off.'),
+            'daily' => __('A report for each active service is generated every day.'),
+            'monthly' => __('A report for each active service is generated on the 1st of each month.'),
+            default => __('A report for each active service is generated every Monday.'),
         };
     }
 
@@ -51,28 +56,28 @@ class Exports extends Page
     {
         return [
             Action::make('generateReports')
-                ->label('Generate reports now')
+                ->label(__('Generate reports now'))
                 ->icon('heroicon-o-chart-pie')
                 ->action(function (): void {
                     Artisan::call('vpnforge:export-report');
 
                     Notification::make()
-                        ->title('Reports generated')
-                        ->body('A PDF was written for each active service that had activity this week.')
+                        ->title(__('Reports generated'))
+                        ->body(__('A PDF was written for each active service that had activity this week.'))
                         ->success()
                         ->send();
                 }),
             Action::make('exportLogs')
-                ->label('Export logs (CSV)')
+                ->label(__('Export logs (CSV)'))
                 ->icon('heroicon-o-table-cells')
                 ->requiresConfirmation()
-                ->modalDescription('Writes the traffic, connection and bandwidth logs to a zip of CSV files you can download below.')
+                ->modalDescription(__('Writes the traffic, connection and bandwidth logs to a zip of CSV files you can download below.'))
                 ->action(function (LogExporter $exporter, ExportArchive $archive): void {
                     $zip = $exporter->exportZip();
                     $archive->put('logs-'.now()->format('Y-m-d_His').'.zip', File::get($zip));
                     File::delete($zip);
 
-                    Notification::make()->title('Logs exported')->success()->send();
+                    Notification::make()->title(__('Logs exported'))->success()->send();
                 }),
         ];
     }
@@ -90,7 +95,7 @@ class Exports extends Page
         $path = app(ExportArchive::class)->resolve($name);
 
         if ($path === null) {
-            Notification::make()->title('That file no longer exists')->danger()->send();
+            Notification::make()->title(__('That file no longer exists'))->danger()->send();
 
             return null;
         }
@@ -105,7 +110,7 @@ class Exports extends Page
         if ($path !== null) {
             File::delete($path);
 
-            Notification::make()->title('Export deleted')->success()->send();
+            Notification::make()->title(__('Export deleted'))->success()->send();
         }
     }
 }

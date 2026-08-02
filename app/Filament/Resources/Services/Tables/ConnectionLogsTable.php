@@ -16,30 +16,30 @@ class ConnectionLogsTable
         return $table
             ->columns([
                 TextColumn::make('serviceUser.name')
-                    ->label('User')
-                    ->placeholder('deleted user')
+                    ->label(__('User'))
+                    ->placeholder(__('deleted user'))
                     ->searchable(),
                 TextColumn::make('connected_at')
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('disconnected_at')
                     ->dateTime()
-                    ->placeholder('still connected')
+                    ->placeholder(__('still connected'))
                     ->sortable(),
                 TextColumn::make('peer_ip')
-                    ->label('From IP')
+                    ->label(__('From IP'))
                     ->fontFamily('mono')
                     ->placeholder('--'),
                 TextColumn::make('bytes_in')
-                    ->label('Received')
+                    ->label(__('Received'))
                     ->formatStateUsing(fn (?int $state) => self::formatBytes($state ?? 0)),
                 TextColumn::make('bytes_out')
-                    ->label('Sent')
+                    ->label(__('Sent'))
                     ->formatStateUsing(fn (?int $state) => self::formatBytes($state ?? 0)),
             ])
             ->emptyStateIcon('heroicon-o-signal')
-            ->emptyStateHeading('No connection logs')
-            ->emptyStateDescription('A session is recorded when polling finds a peer that handshook within the last few minutes, so a client has to be connected while the service is being polled -- sessions that ended before then are not backfilled.')
+            ->emptyStateHeading(__('No connection logs'))
+            ->emptyStateDescription(__('A session is recorded when polling finds a peer that handshook within the last few minutes, so a client has to be connected while the service is being polled -- sessions that ended before then are not backfilled.'))
             ->defaultSort('connected_at', 'desc')
             ->poll('10s');
     }

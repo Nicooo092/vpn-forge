@@ -1,6 +1,6 @@
-<div class="space-y-4">
+<div style="display:flex;flex-direction:column;gap:1rem;">
     @if ($dataUri === null)
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p style="opacity:0.65;">
             {{ $message }}
         </p>
     @else
@@ -15,19 +15,22 @@
                one (long endpoint FQDN, several DNS servers, a split-tunnel
                AllowedIPs list) reaches 77x77 and needs ~512px before it reads
                back reliably. Sizing for the dense case costs nothing. --}}
-        <div class="flex justify-center">
-            <div class="w-full max-w-[36rem] rounded-lg bg-white p-4">
-                <img src="{{ $dataUri }}" alt="WireGuard configuration QR code" class="h-auto w-full">
+        <div style="display:flex;justify-content:center;">
+            <div style="width:100%;max-width:36rem;border-radius:0.5rem;background:#ffffff;padding:1rem;">
+                <img src="{{ $dataUri }}" alt="{{ __('WireGuard configuration QR code') }}" style="display:block;height:auto;width:100%;">
             </div>
         </div>
 
-        <p class="text-center text-sm text-gray-500 dark:text-gray-400">
-            In the WireGuard app, tap <strong>+</strong> &rarr; <strong>Scan from QR code</strong>,
-            then name the tunnel <strong>{{ $tunnelName }}</strong>.
+        <p style="text-align:center;opacity:0.65;">
+            {!! __('In the WireGuard app, tap :plus &rarr; :scan, then name the tunnel :name.', [
+                'plus' => '<strong>+</strong>',
+                'scan' => '<strong>' . e(__('Scan from QR code')) . '</strong>',
+                'name' => '<strong>' . e($tunnelName) . '</strong>',
+            ]) !!}
         </p>
 
-        <p class="text-center text-xs text-gray-400 dark:text-gray-500">
-            This code carries the client's private key -- treat it like the config file itself.
+        <p style="text-align:center;font-size:0.8rem;opacity:0.55;">
+            {{ __("This code carries the client's private key -- treat it like the config file itself.") }}
         </p>
     @endif
 </div>

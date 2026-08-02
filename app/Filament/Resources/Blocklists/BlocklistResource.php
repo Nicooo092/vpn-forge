@@ -45,8 +45,8 @@ class BlocklistResource extends Resource
         return $schema->columns(1)->components([
             // A quick pick that fills the two fields below; not stored itself.
             Select::make('preset')
-                ->label('Start from a known list')
-                ->placeholder('Choose one, or fill in your own below')
+                ->label(__('Start from a known list'))
+                ->placeholder(__('Choose one, or fill in your own below'))
                 ->options(collect(Blocklist::presets())->map(fn ($p) => $p['name']))
                 ->live()
                 ->dehydrated(false)
@@ -64,11 +64,11 @@ class BlocklistResource extends Resource
                 ->maxLength(255),
 
             TextInput::make('url')
-                ->label('List URL')
+                ->label(__('List URL'))
                 ->required()
                 ->url()
                 ->maxLength(2048)
-                ->helperText('A hosts file, a plain domain list, or an AdGuard/adblock filter. Refreshed daily.'),
+                ->helperText(__('A hosts file, a plain domain list, or an AdGuard/adblock filter. Refreshed daily.')),
 
             Toggle::make('enabled')
                 ->default(true),
@@ -88,23 +88,23 @@ class BlocklistResource extends Resource
                     // without a separate "refresh" click.
                     ->afterStateUpdated(fn () => RefreshBlocklists::dispatch()),
                 TextColumn::make('domain_count')
-                    ->label('Domains')
+                    ->label(__('Domains'))
                     ->numeric()
-                    ->placeholder('not fetched yet')
+                    ->placeholder(__('not fetched yet'))
                     ->sortable(),
                 TextColumn::make('last_fetched_at')
-                    ->label('Last updated')
+                    ->label(__('Last updated'))
                     ->since()
-                    ->placeholder('never')
+                    ->placeholder(__('never'))
                     ->sortable(),
                 IconColumn::make('last_error')
-                    ->label('OK')
+                    ->label(__('OK'))
                     ->boolean()
                     ->state(fn (Blocklist $record) => $record->last_error === null)
                     ->tooltip(fn (Blocklist $record) => $record->last_error),
             ])
-            ->emptyStateHeading('No blocklists yet')
-            ->emptyStateDescription('Add a subscription — start from a known list — and it is fetched, merged and served by every service that has blocklists enabled.')
+            ->emptyStateHeading(__('No blocklists yet'))
+            ->emptyStateDescription(__('Add a subscription — start from a known list — and it is fetched, merged and served by every service that has blocklists enabled.'))
             ->defaultSort('name');
     }
 

@@ -34,12 +34,12 @@ class Updates extends Page
     {
         return [
             Action::make('check')
-                ->label('Check now')
+                ->label(__('Check now'))
                 ->icon('heroicon-o-arrow-path')
                 ->action(function (): void {
                     app(UpdateChecker::class)->check(fresh: true);
 
-                    Notification::make()->title('Checked for updates')->success()->send();
+                    Notification::make()->title(__('Checked for updates'))->success()->send();
                 }),
         ];
     }

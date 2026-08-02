@@ -37,7 +37,7 @@ class ServiceForm
         // the section below was wrapped in a Grid.
         return $schema->columns(1)->components([
             ToggleButtons::make('form_mode')
-                ->label('Configuration mode')
+                ->label(__('Configuration mode'))
                 ->options([
                     'simple' => 'Simple',
                     'advanced' => 'Advanced',
@@ -52,7 +52,7 @@ class ServiceForm
                 // Not a column on services -- it only drives which fields are
                 // on screen, so it must never reach the model.
                 ->dehydrated(false)
-                ->helperText('Simple picks the network details for you. Advanced exposes every parameter the drivers actually read.'),
+                ->helperText(__('Simple picks the network details for you. Advanced exposes every parameter the drivers actually read.')),
 
             // Split the row: what you edit on the left, what the service
             // actually is on the right. Previously the editable section took
@@ -60,8 +60,8 @@ class ServiceForm
             // so the page was half empty while the runtime details it could
             // have shown were not visible anywhere at all.
             Grid::make(3)->schema([
-                Section::make('Service')
-                    ->description('What this service is and where clients reach it.')
+                Section::make(__('Service'))
+                    ->description(__('What this service is and where clients reach it.'))
                     // Nothing to report on a service that does not exist yet,
                     // so on create this takes the whole row.
                     //
@@ -81,7 +81,7 @@ class ServiceForm
                         TextInput::make('name')
                             ->required()
                             ->maxLength(255)
-                            ->placeholder('Home tunnel'),
+                            ->placeholder(__('Home tunnel')),
 
                         Select::make('protocol')
                             ->options(VpnProtocol::class)
@@ -89,7 +89,7 @@ class ServiceForm
                             ->live()
                             ->default(VpnProtocol::WireGuard)
                             ->disabledOn('edit')
-                            ->helperText('Cannot be changed after creation.')
+                            ->helperText(__('Cannot be changed after creation.'))
                         // Re-derive the network defaults whenever the protocol
                         // changes, so simple mode never leaves a WireGuard
                         // interface name on an OpenVPN service (or a port that
@@ -109,30 +109,30 @@ class ServiceForm
                             }),
 
                         TextInput::make('config.endpoint_host')
-                            ->label('Public endpoint (hostname or IP)')
+                            ->label(__('Public endpoint (hostname or IP)'))
                             ->required()
                             ->default(fn () => self::detectPublicHost())
-                            ->helperText('What clients connect to -- this server\'s public IP or a domain pointing at it.')
+                            ->helperText(__('What clients connect to -- this server\'s public IP or a domain pointing at it.'))
                             ->columnSpanFull(),
                     ]),
 
-                Section::make('Provisioned state')
-                    ->description('Set when the service was created. Read-only here.')
+                Section::make(__('Provisioned state'))
+                    ->description(__('Set when the service was created. Read-only here.'))
                     ->columnSpan(1)
                     ->visibleOn('edit')
                     ->schema([
                         Placeholder::make('status_summary')
-                            ->label('Status')
+                            ->label(__('Status'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
                                 : $record->status->getLabel().($record->last_error !== null ? ' -- '.$record->last_error : '')),
 
                         Placeholder::make('interface_summary')
-                            ->label('Interface')
+                            ->label(__('Interface'))
                             ->content(fn (?Service $record) => $record?->interface_name ?? '--'),
 
                         Placeholder::make('network_summary')
-                            ->label('Network')
+                            ->label(__('Network'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
                                 : $record->subnet_cidr.' on port '.$record->listen_port.'/'.$record->transport->value),
@@ -141,13 +141,13 @@ class ServiceForm
                         // the one that has to be reachable for traffic logging
                         // to see anything.
                         Placeholder::make('resolver_summary')
-                            ->label('Tunnel gateway / resolver')
+                            ->label(__('Tunnel gateway / resolver'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
                                 : self::gatewayAddress($record->subnet_cidr)),
 
                         Placeholder::make('users_summary')
-                            ->label('Users')
+                            ->label(__('Users'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
                                 : $record->serviceUsers()->count().' configured'),
@@ -173,7 +173,7 @@ class ServiceForm
                 ->dehydratedWhenHidden()
                 ->visible(fn (Get $get) => $get('form_mode') === 'advanced')
                 ->tabs([
-                    Tab::make('Network')
+                    Tab::make(__('Network'))
                         ->icon('heroicon-o-globe-alt')
                         ->columns(2)
                         ->dehydratedWhenHidden()
@@ -185,34 +185,34 @@ class ServiceForm
                             // or traversal vector. Mirrors NetworkInput, which
                             // enforces the same at the driver.
                             TextInput::make('interface_name')
-                                ->label('Interface name')
+                                ->label(__('Interface name'))
                                 ->required()
                                 ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
                                 ->validationMessages(['regex' => 'Lower-case letters and digits only, starting with a letter, e.g. wg0.'])
                                 ->default(fn (Get $get) => self::suggestInterfaceName(self::protocolFrom($get('protocol'))))
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
-                                ->helperText('The network interface and systemd instance name. Cannot be changed after creation.'),
+                                ->helperText(__('The network interface and systemd instance name. Cannot be changed after creation.')),
 
                             TextInput::make('subnet_cidr')
-                                ->label('Subnet (CIDR)')
+                                ->label(__('Subnet (CIDR)'))
                                 ->required()
                                 ->rule('regex:/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/')
                                 ->validationMessages(['regex' => 'An IPv4 CIDR, e.g. 10.8.0.0/24.'])
                                 ->default(fn () => self::suggestSubnet())
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
-                                ->helperText('The private range handed out to clients. The .1 address becomes the tunnel gateway and DNS server.'),
+                                ->helperText(__('The private range handed out to clients. The .1 address becomes the tunnel gateway and DNS server.')),
 
                             TextInput::make('listen_port')
-                                ->label('Listen port')
+                                ->label(__('Listen port'))
                                 ->numeric()
                                 ->required()
                                 ->minValue(1)
                                 ->maxValue(65535)
                                 ->default(fn (Get $get) => self::suggestListenPort(self::protocolFrom($get('protocol'))))
                                 ->dehydratedWhenHidden()
-                                ->helperText('Open this port in your firewall / cloud security group -- the panel cannot do that for you.'),
+                                ->helperText(__('Open this port in your firewall / cloud security group -- the panel cannot do that for you.')),
 
                             Select::make('transport')
                                 ->options(Transport::class)
@@ -225,21 +225,21 @@ class ServiceForm
                                 // WireGuard from inserting a null.
                                 ->dehydrated()
                                 ->helperText(fn (Get $get) => self::protocolFrom($get('protocol')) === VpnProtocol::WireGuard
-                                    ? 'WireGuard is UDP-only.'
-                                    : 'TCP survives restrictive networks better; UDP is faster.')
+                                    ? __('WireGuard is UDP-only.')
+                                    : __('TCP survives restrictive networks better; UDP is faster.'))
                                 ->disabled(fn (Get $get) => self::protocolFrom($get('protocol')) === VpnProtocol::WireGuard),
 
                             TextInput::make('config.egress_interface')
-                                ->label('Egress network interface')
+                                ->label(__('Egress network interface'))
                                 ->required()
                                 ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
                                 ->validationMessages(['regex' => 'Lower-case letters and digits only, e.g. eth0 or ens5.'])
                                 ->default(fn () => self::detectEgressInterface())
                                 ->dehydratedWhenHidden()
-                                ->helperText('The server\'s internet-facing interface, used for the NAT/MASQUERADE rule.'),
+                                ->helperText(__('The server\'s internet-facing interface, used for the NAT/MASQUERADE rule.')),
                         ]),
 
-                    Tab::make('WireGuard')
+                    Tab::make(__('WireGuard'))
                         ->icon('heroicon-o-bolt')
                         ->columns(2)
                         ->visible(fn (Get $get) => self::protocolFrom($get('protocol')) === VpnProtocol::WireGuard)
@@ -251,38 +251,38 @@ class ServiceForm
                                 ->maxValue(9000)
                                 ->default(1420)
                                 ->dehydratedWhenHidden()
-                                ->helperText('1420 suits most links. Lower it if large packets stall over the tunnel.'),
+                                ->helperText(__('1420 suits most links. Lower it if large packets stall over the tunnel.')),
 
                             TextInput::make('config.keepalive')
-                                ->label('Persistent keepalive (seconds)')
+                                ->label(__('Persistent keepalive (seconds)'))
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(3600)
                                 ->default(25)
                                 ->dehydratedWhenHidden()
-                                ->helperText('Keeps NAT mappings alive for clients behind a router. 0 disables it.'),
+                                ->helperText(__('Keeps NAT mappings alive for clients behind a router. 0 disables it.')),
 
                             TagsInput::make('config.dns')
-                                ->label('Custom DNS servers for clients')
+                                ->label(__('Custom DNS servers for clients'))
                                 ->default(['1.1.1.1', '1.0.0.1'])
                                 ->dehydratedWhenHidden()
                                 ->visible(fn (Get $get) => $get('config.push_dns') === false)
-                                ->helperText('Only used when clients are not pointed at this service\'s own resolver.'),
+                                ->helperText(__('Only used when clients are not pointed at this service\'s own resolver.')),
 
                             TextInput::make('config.client_allowed_ips')
-                                ->label('Client AllowedIPs')
+                                ->label(__('Client AllowedIPs'))
                                 ->default('0.0.0.0/0, ::/0')
                                 ->dehydratedWhenHidden()
-                                ->helperText('0.0.0.0/0, ::/0 is a full tunnel. Narrow it for split tunnelling.'),
+                                ->helperText(__('0.0.0.0/0, ::/0 is a full tunnel. Narrow it for split tunnelling.')),
                         ]),
 
-                    Tab::make('OpenVPN')
+                    Tab::make(__('OpenVPN'))
                         ->icon('heroicon-o-lock-closed')
                         ->columns(2)
                         ->visible(fn (Get $get) => self::protocolFrom($get('protocol')) === VpnProtocol::OpenVpn)
                         ->schema([
                             TextInput::make('config.data_ciphers')
-                                ->label('Data ciphers')
+                                ->label(__('Data ciphers'))
                                 ->default('AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305')
                                 ->dehydratedWhenHidden()
                                 // Interpolated into the root-run server.conf, so
@@ -290,10 +290,10 @@ class ServiceForm
                                 // newline can reach a command-executing directive.
                                 ->rule('regex:/^[A-Za-z0-9:_-]+$/')
                                 ->validationMessages(['regex' => 'Cipher names only (letters, digits, dashes), colon-separated.'])
-                                ->helperText('Colon-separated, in order of preference.'),
+                                ->helperText(__('Colon-separated, in order of preference.')),
 
                             Select::make('config.auth_digest')
-                                ->label('Auth digest')
+                                ->label(__('Auth digest'))
                                 ->options([
                                     'SHA256' => 'SHA256',
                                     'SHA384' => 'SHA384',
@@ -303,14 +303,14 @@ class ServiceForm
                                 ->dehydratedWhenHidden(),
 
                             Select::make('config.tls_version_min')
-                                ->label('Minimum TLS version')
+                                ->label(__('Minimum TLS version'))
                                 ->options([
                                     '1.2' => 'TLS 1.2',
                                     '1.3' => 'TLS 1.3',
                                 ])
                                 ->default('1.2')
                                 ->dehydratedWhenHidden()
-                                ->helperText('1.3 is stricter but rejects older clients.'),
+                                ->helperText(__('1.3 is stricter but rejects older clients.')),
 
                             // Deliberately not `config.keepalive`: WireGuard
                             // uses that key for a single number, and sharing
@@ -319,79 +319,79 @@ class ServiceForm
                             // rejects outright -- the server then never
                             // starts at all.
                             TextInput::make('config.openvpn_keepalive')
-                                ->label('Keepalive (ping ping-restart)')
+                                ->label(__('Keepalive (ping ping-restart)'))
                                 ->default('10 60')
                                 ->dehydratedWhenHidden()
                                 ->rule('regex:/^\d+\s+\d+$/')
                                 ->validationMessages(['regex' => 'Two numbers separated by a space, for example 10 60.'])
-                                ->helperText('Two numbers: ping interval and restart timeout, in seconds.'),
+                                ->helperText(__('Two numbers: ping interval and restart timeout, in seconds.')),
 
                             TextInput::make('config.max_clients')
-                                ->label('Maximum simultaneous clients')
+                                ->label(__('Maximum simultaneous clients'))
                                 ->numeric()
                                 ->minValue(1)
                                 ->maxValue(4096)
                                 ->dehydratedWhenHidden()
-                                ->placeholder('unlimited')
-                                ->helperText('Leave empty for no limit.'),
+                                ->placeholder(__('unlimited'))
+                                ->helperText(__('Leave empty for no limit.')),
 
                             TextInput::make('config.verb')
-                                ->label('Log verbosity')
+                                ->label(__('Log verbosity'))
                                 ->numeric()
                                 ->minValue(0)
                                 ->maxValue(11)
                                 ->default(3)
                                 ->dehydratedWhenHidden()
-                                ->helperText('3 is normal. 5 and above is very noisy.'),
+                                ->helperText(__('3 is normal. 5 and above is very noisy.')),
 
                             Toggle::make('config.redirect_gateway')
-                                ->label('Route all client traffic through this service')
+                                ->label(__('Route all client traffic through this service'))
                                 ->default(true)
                                 ->dehydratedWhenHidden(),
 
                             Toggle::make('config.duplicate_cn')
-                                ->label('Allow one certificate on several devices at once')
+                                ->label(__('Allow one certificate on several devices at once'))
                                 ->default(false)
                                 ->dehydratedWhenHidden()
-                                ->helperText('Off means a second device using the same client config kicks the first one off.'),
+                                ->helperText(__('Off means a second device using the same client config kicks the first one off.')),
 
                             TagsInput::make('config.push_routes')
-                                ->label('Additional routes to push')
+                                ->label(__('Additional routes to push'))
                                 ->dehydratedWhenHidden()
                                 ->placeholder('192.168.1.0 255.255.255.0')
                                 // Each route is two IPv4s. The driver drops
                                 // anything else, and this rejects it at entry so
                                 // no element can carry a newline into server.conf.
                                 ->nestedRecursiveRules(['regex:/^(\d{1,3}\.){3}\d{1,3}( (\d{1,3}\.){3}\d{1,3})?$/'])
-                                ->helperText('OpenVPN route syntax: network then netmask.')
+                                ->helperText(__('OpenVPN route syntax: network then netmask.'))
                                 ->columnSpanFull(),
                         ]),
 
-                    Tab::make('DNS & logging')
+                    Tab::make(__('DNS & logging'))
                         ->icon('heroicon-o-document-magnifying-glass')
                         ->columns(2)
                         ->dehydratedWhenHidden()
                         ->schema([
                             Toggle::make('logging_enabled_default')
-                                ->label('Log activity for users of this service by default')
+                                ->label(__('Log activity for users of this service by default'))
                                 ->default(true)
                                 ->dehydratedWhenHidden()
-                                ->helperText('Can be overridden per user. Covers connection metadata, DNS-visible domains and plaintext HTTP.')
+                                ->helperText(__('Can be overridden per user. Covers connection metadata, DNS-visible domains and plaintext HTTP.'))
                                 ->columnSpanFull(),
 
                             Toggle::make('config.push_dns')
-                                ->label('Point clients at this service\'s own DNS resolver')
+                                ->label(__('Point clients at this service\'s own DNS resolver'))
                                 ->default(true)
                                 ->live()
                                 ->dehydratedWhenHidden()
-                                ->helperText('Required for DNS traffic logging: queries have to pass through this service\'s resolver for the capture agent to see them. It forwards on to the upstreams below, so name resolution is unaffected. Turning this off leaves the Traffic logs tab permanently empty.')
+                                ->helperText(__('Required for DNS traffic logging: queries have to pass through this service\'s resolver for the capture agent to see them. It forwards on to the upstreams below, so name resolution is unaffected. Turning this off leaves the Traffic logs tab permanently empty.'))
                                 ->columnSpanFull(),
 
                             // Not stored: it only decides what goes into the
                             // upstream list below, which is the value the
                             // resolver actually reads.
                             Select::make('dns_preset')
-                                ->label('Upstream DNS provider')
+                                ->label(__('Upstream DNS provider'))
                                 ->options(DnsPresets::options())
                                 ->default(fn (Get $get) => DnsPresets::keyFor($get('config.dns_upstreams') ?? []))
                                 ->live()
@@ -404,32 +404,32 @@ class ServiceForm
                                     $set('config.dns_upstreams', DnsPresets::serversFor($state));
                                 })
                                 ->helperText(fn (Get $get) => DnsPresets::noteFor($get('dns_preset'))
-                                    ?? 'Where this service\'s resolver forwards queries it cannot answer itself. Each service can use a different one.')
+                                    ?? __('Where this service\'s resolver forwards queries it cannot answer itself. Each service can use a different one.'))
                                 ->columnSpanFull(),
 
                             TagsInput::make('config.dns_upstreams')
-                                ->label('Upstream DNS servers')
+                                ->label(__('Upstream DNS servers'))
                                 ->default(['1.1.1.1', '1.0.0.1'])
                                 ->dehydratedWhenHidden()
                                 // Shown for a preset too, read-only, so what
                                 // was chosen is visible rather than implied.
                                 ->disabled(fn (Get $get) => $get('dns_preset') !== DnsPresets::CUSTOM)
                                 ->dehydrated()
-                                ->helperText('Cleared, this falls back to Cloudflare rather than leaving the resolver with nowhere to forward to.')
+                                ->helperText(__('Cleared, this falls back to Cloudflare rather than leaving the resolver with nowhere to forward to.'))
                                 ->columnSpanFull(),
 
                             TagsInput::make('config.blocked_domains')
-                                ->label('Blocked domains')
+                                ->label(__('Blocked domains'))
                                 ->placeholder('ads.example.com')
                                 ->dehydratedWhenHidden()
-                                ->helperText('Blocked for everyone on this service, subdomains included -- entering example.com also covers www.example.com. The lookup is refused by this service\'s own resolver, so it never reaches an upstream. A client using its own DNS server bypasses this entirely.')
+                                ->helperText(__('Blocked for everyone on this service, subdomains included -- entering example.com also covers www.example.com. The lookup is refused by this service\'s own resolver, so it never reaches an upstream. A client using its own DNS server bypasses this entirely.'))
                                 ->columnSpanFull(),
 
                             Toggle::make('config.use_blocklists')
-                                ->label('Apply subscription blocklists')
+                                ->label(__('Apply subscription blocklists'))
                                 ->default(true)
                                 ->dehydratedWhenHidden()
-                                ->helperText('Serve the shared, auto-updated blocklists (managed under Blocklists) on this service too. Turn off for a service that should not be filtered.')
+                                ->helperText(__('Serve the shared, auto-updated blocklists (managed under Blocklists) on this service too. Turn off for a service that should not be filtered.'))
                                 ->columnSpanFull(),
                         ]),
                 ]),

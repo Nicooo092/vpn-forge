@@ -38,17 +38,17 @@ class EditService extends EditRecord
             // and deletes the record itself once it has, which is also what
             // the services table does.
             Action::make('remove')
-                ->label('Remove')
+                ->label(__('Remove'))
                 ->icon('heroicon-o-trash')
                 ->color('danger')
                 ->requiresConfirmation()
-                ->modalDescription('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.')
+                ->modalDescription(__('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.'))
                 ->action(function (Service $record) {
                     RemoveService::dispatch($record);
 
                     Notification::make()
-                        ->title('Removing service')
-                        ->body('Tearing down in the background.')
+                        ->title(__('Removing service'))
+                        ->body(__('Tearing down in the background.'))
                         ->success()
                         ->send();
 

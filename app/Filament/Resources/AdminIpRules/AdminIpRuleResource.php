@@ -37,14 +37,14 @@ class AdminIpRuleResource extends Resource
     {
         return $schema->columns(1)->components([
             TextInput::make('cidr')
-                ->label('IP or CIDR')
+                ->label(__('IP or CIDR'))
                 ->required()
-                ->placeholder('203.0.113.4 or 203.0.113.0/24')
+                ->placeholder(__('203.0.113.4 or 203.0.113.0/24'))
                 ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
                     [$ip, $prefix] = array_pad(explode('/', (string) $value, 2), 2, null);
 
                     if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
-                        $fail('Enter a valid IP address or CIDR range.');
+                        $fail(__('Enter a valid IP address or CIDR range.'));
 
                         return;
                     }
@@ -53,15 +53,15 @@ class AdminIpRuleResource extends Resource
                         $max = str_contains($ip, ':') ? 128 : 32;
 
                         if (! ctype_digit($prefix) || (int) $prefix < 0 || (int) $prefix > $max) {
-                            $fail("The prefix after / must be 0-{$max}.");
+                            $fail(__('The prefix after / must be 0-:max.', ['max' => $max]));
                         }
                     }
                 })
-                ->helperText('A single address, or a range like 203.0.113.0/24. Your current address is '.request()->ip().'.'),
+                ->helperText(__('A single address, or a range like 203.0.113.0/24. Your current address is :ip.', ['ip' => request()->ip()])),
 
             TextInput::make('label')
                 ->maxLength(255)
-                ->placeholder('Home, office, ...'),
+                ->placeholder(__('Home, office, ...')),
         ]);
     }
 
@@ -69,12 +69,12 @@ class AdminIpRuleResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('cidr')->label('IP / CIDR')->weight('bold')->fontFamily('mono'),
+                TextColumn::make('cidr')->label(__('IP / CIDR'))->weight('bold')->fontFamily('mono'),
                 TextColumn::make('label')->placeholder('--'),
-                TextColumn::make('created_at')->label('Added')->since()->sortable(),
+                TextColumn::make('created_at')->label(__('Added'))->since()->sortable(),
             ])
-            ->emptyStateHeading('No restriction')
-            ->emptyStateDescription('The panel is reachable from any network. Add an address to restrict it -- loopback always stays allowed, and you can clear the list over SSH if you get locked out.')
+            ->emptyStateHeading(__('No restriction'))
+            ->emptyStateDescription(__('The panel is reachable from any network. Add an address to restrict it -- loopback always stays allowed, and you can clear the list over SSH if you get locked out.'))
             ->defaultSort('created_at');
     }
 

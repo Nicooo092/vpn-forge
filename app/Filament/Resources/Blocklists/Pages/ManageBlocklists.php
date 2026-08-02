@@ -22,14 +22,14 @@ class ManageBlocklists extends ManageRecords
     {
         return [
             CreateAction::make()
-                ->label('Add blocklist')
-                ->after(fn () => $this->recompile('Blocklist added')),
+                ->label(__('Add blocklist'))
+                ->after(fn () => $this->recompile(__('Blocklist added'))),
 
             Action::make('refresh')
-                ->label('Refresh now')
+                ->label(__('Refresh now'))
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
-                ->action(fn () => $this->recompile('Refreshing blocklists')),
+                ->action(fn () => $this->recompile(__('Refreshing blocklists'))),
         ];
     }
 
@@ -37,8 +37,8 @@ class ManageBlocklists extends ManageRecords
     {
         return parent::table($table)
             ->recordActions([
-                EditAction::make()->after(fn () => $this->recompile('Blocklist updated')),
-                DeleteAction::make()->after(fn () => $this->recompile('Blocklist removed')),
+                EditAction::make()->after(fn () => $this->recompile(__('Blocklist updated'))),
+                DeleteAction::make()->after(fn () => $this->recompile(__('Blocklist removed'))),
             ]);
     }
 
@@ -53,7 +53,7 @@ class ManageBlocklists extends ManageRecords
 
         Notification::make()
             ->title($title)
-            ->body('Fetching and compiling in the background — the resolvers pick it up in a moment.')
+            ->body(__('Fetching and compiling in the background — the resolvers pick it up in a moment.'))
             ->success()
             ->send();
     }

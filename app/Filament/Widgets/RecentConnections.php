@@ -14,7 +14,7 @@ class RecentConnections extends TableWidget
     public function table(Table $table): Table
     {
         return $table
-            ->heading('Recent connections')
+            ->heading(__('Recent connections'))
             ->query(
                 ConnectionLog::query()
                     ->with('serviceUser.service')
@@ -23,28 +23,28 @@ class RecentConnections extends TableWidget
             )
             ->columns([
                 TextColumn::make('serviceUser.name')
-                    ->label('User')
+                    ->label(__('User'))
                     ->weight('bold')
-                    ->placeholder('deleted user')
+                    ->placeholder(__('deleted user'))
                     ->description(fn (ConnectionLog $record) => $record->serviceUser?->service?->name),
                 TextColumn::make('connected_at')
-                    ->label('Started')
+                    ->label(__('Started'))
                     ->since()
                     ->tooltip(fn (ConnectionLog $record) => $record->connected_at?->toDayDateTimeString()),
                 TextColumn::make('disconnected_at')
-                    ->label('Ended')
+                    ->label(__('Ended'))
                     ->since()
                     ->badge()
                     ->color(fn (ConnectionLog $record) => $record->disconnected_at === null ? 'success' : 'gray')
-                    ->placeholder('still connected'),
+                    ->placeholder(__('still connected')),
                 TextColumn::make('peer_ip')
-                    ->label('From')
+                    ->label(__('From'))
                     ->fontFamily('mono')
                     ->placeholder('--'),
             ])
             ->emptyStateIcon('heroicon-o-signal')
-            ->emptyStateHeading('No sessions recorded')
-            ->emptyStateDescription('A session is logged when polling finds a peer that has handshaken recently.')
+            ->emptyStateHeading(__('No sessions recorded'))
+            ->emptyStateDescription(__('A session is logged when polling finds a peer that has handshaken recently.'))
             ->paginated(false)
             ->poll('30s');
     }

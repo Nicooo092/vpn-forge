@@ -45,7 +45,7 @@ class NotificationChannelResource extends Resource
             TextInput::make('name')
                 ->required()
                 ->maxLength(255)
-                ->placeholder('My phone, Ops channel, ...'),
+                ->placeholder(__('My phone, Ops channel, ...')),
 
             Select::make('type')
                 ->required()
@@ -58,28 +58,28 @@ class NotificationChannelResource extends Resource
                 ]),
 
             TextInput::make('config.webhook_url')
-                ->label('Discord webhook URL')
+                ->label(__('Discord webhook URL'))
                 ->url()
                 ->required()
                 ->visible(fn (Get $get) => $get('type') === 'discord')
-                ->helperText('Discord → Server settings → Integrations → Webhooks → Copy URL.'),
+                ->helperText(__('Discord → Server settings → Integrations → Webhooks → Copy URL.')),
 
             TextInput::make('config.bot_token')
-                ->label('Bot token')
+                ->label(__('Bot token'))
                 ->required()
                 // Validated here too, so a wrong-shape token is caught at save
                 // rather than silently failing every later delivery.
                 ->rule('regex:/^\d+:[A-Za-z0-9_-]+$/')
                 ->visible(fn (Get $get) => $get('type') === 'telegram')
-                ->helperText('From @BotFather, in the form 123456:ABC-DEF...'),
+                ->helperText(__('From @BotFather, in the form 123456:ABC-DEF...')),
             TextInput::make('config.chat_id')
-                ->label('Chat ID')
+                ->label(__('Chat ID'))
                 ->required()
                 ->visible(fn (Get $get) => $get('type') === 'telegram')
-                ->helperText('Your numeric chat ID (message @userinfobot to find it).'),
+                ->helperText(__('Your numeric chat ID (message @userinfobot to find it).')),
 
             TextInput::make('config.server')
-                ->label('ntfy server')
+                ->label(__('ntfy server'))
                 ->url()
                 ->default('https://ntfy.sh')
                 ->required()
@@ -87,24 +87,24 @@ class NotificationChannelResource extends Resource
                 ->rule('starts_with:https://')
                 ->visible(fn (Get $get) => $get('type') === 'ntfy'),
             TextInput::make('config.topic')
-                ->label('Topic')
+                ->label(__('Topic'))
                 ->required()
                 ->rule('regex:/^[A-Za-z0-9_-]{1,64}$/')
                 ->visible(fn (Get $get) => $get('type') === 'ntfy')
-                ->helperText('Letters, digits, - and _. Anyone who knows it can read it -- pick something unguessable.'),
+                ->helperText(__('Letters, digits, - and _. Anyone who knows it can read it -- pick something unguessable.')),
 
             TextInput::make('config.to')
-                ->label('Send to email')
+                ->label(__('Send to email'))
                 ->email()
                 ->required()
                 ->visible(fn (Get $get) => $get('type') === 'email')
-                ->helperText('Needs SMTP configured in the server\'s .env, or the send will fail.'),
+                ->helperText(__('Needs SMTP configured in the server\'s .env, or the send will fail.')),
 
             CheckboxList::make('events')
-                ->label('Notify me about')
+                ->label(__('Notify me about'))
                 ->options(NotificationEvent::options())
                 ->columns(2)
-                ->helperText('Leave all unticked to receive every event.'),
+                ->helperText(__('Leave all unticked to receive every event.')),
 
             Toggle::make('enabled')->default(true),
         ]);
@@ -118,13 +118,13 @@ class NotificationChannelResource extends Resource
                 TextColumn::make('type')->badge(),
                 ToggleColumn::make('enabled'),
                 IconColumn::make('last_error')
-                    ->label('OK')
+                    ->label(__('OK'))
                     ->boolean()
                     ->state(fn (NotificationChannel $record) => $record->last_error === null)
                     ->tooltip(fn (NotificationChannel $record) => $record->last_error),
             ])
-            ->emptyStateHeading('No channels yet')
-            ->emptyStateDescription('Add a Discord, Telegram, ntfy or email destination, then use "Send test" to check it.')
+            ->emptyStateHeading(__('No channels yet'))
+            ->emptyStateDescription(__('Add a Discord, Telegram, ntfy or email destination, then use "Send test" to check it.'))
             ->defaultSort('name');
     }
 

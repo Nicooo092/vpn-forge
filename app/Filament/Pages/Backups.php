@@ -30,20 +30,25 @@ class Backups extends Page
         return __('Backups');
     }
 
+    public function getTitle(): string|Htmlable
+    {
+        return __('Backups');
+    }
+
     protected function getHeaderActions(): array
     {
         return [
             Action::make('create')
-                ->label('Create backup')
+                ->label(__('Create backup'))
                 ->icon('heroicon-o-plus')
                 ->requiresConfirmation()
-                ->modalDescription('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background and appears below when it is ready.')
+                ->modalDescription(__('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background and appears below when it is ready.'))
                 ->action(function (): void {
                     CreateBackup::dispatch();
 
                     Notification::make()
-                        ->title('Backup started')
-                        ->body('It will appear in the list once the worker has finished.')
+                        ->title(__('Backup started'))
+                        ->body(__('It will appear in the list once the worker has finished.'))
                         ->success()
                         ->send();
                 }),
@@ -68,7 +73,7 @@ class Backups extends Page
         $path = $this->resolve($name);
 
         if ($path === null) {
-            Notification::make()->title('That backup no longer exists')->danger()->send();
+            Notification::make()->title(__('That backup no longer exists'))->danger()->send();
 
             return null;
         }
@@ -83,7 +88,7 @@ class Backups extends Page
         if ($path !== null) {
             File::delete($path);
 
-            Notification::make()->title('Backup deleted')->success()->send();
+            Notification::make()->title(__('Backup deleted'))->success()->send();
         }
     }
 
@@ -98,7 +103,7 @@ class Backups extends Page
         $path = $this->resolve($name);
 
         if ($path === null) {
-            Notification::make()->title('That backup no longer exists')->danger()->send();
+            Notification::make()->title(__('That backup no longer exists'))->danger()->send();
 
             return;
         }
@@ -106,8 +111,8 @@ class Backups extends Page
         RestoreBackup::dispatch($path);
 
         Notification::make()
-            ->title('Restore started')
-            ->body('Overwriting the database and keys in the background. Running tunnels keep their old config until you reboot -- reboot the server once it finishes so the restored configuration takes effect. You will be alerted (if a notification channel is set) only if it fails.')
+            ->title(__('Restore started'))
+            ->body(__('Overwriting the database and keys in the background. Running tunnels keep their old config until you reboot -- reboot the server once it finishes so the restored configuration takes effect. You will be alerted (if a notification channel is set) only if it fails.'))
             ->warning()
             ->persistent()
             ->send();

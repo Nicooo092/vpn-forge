@@ -47,14 +47,14 @@ class ServiceReport extends Page
 
     public function getTitle(): string|Htmlable
     {
-        return 'Report -- '.$this->record->name;
+        return __('Report -- :name', ['name' => $this->record->name]);
     }
 
     protected function getHeaderActions(): array
     {
         return [
             Action::make('pdf')
-                ->label('Download PDF')
+                ->label(__('Download PDF'))
                 ->icon('heroicon-o-document-arrow-down')
                 ->visible(fn (): bool => $this->data()->hasData())
                 ->action(fn () => response()->streamDownload(
@@ -69,12 +69,12 @@ class ServiceReport extends Page
      */
     public function periodOptions(): array
     {
-        return ['24h' => 'Last 24 hours', '7d' => 'Last 7 days', '30d' => 'Last 30 days'];
+        return ['24h' => __('Last 24 hours'), '7d' => __('Last 7 days'), '30d' => __('Last 30 days')];
     }
 
     private function periodLabel(): string
     {
-        return $this->periodOptions()[$this->period] ?? 'Last 7 days';
+        return $this->periodOptions()[$this->period] ?? __('Last 7 days');
     }
 
     private function since(): Carbon
