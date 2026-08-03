@@ -14,7 +14,11 @@
 /.zed
 /auth.json
 /node_modules
-/public/build
+# /public/build is deliberately NOT ignored: the panel's Filament theme has to
+# be compiled, but the installer is Composer-only and production servers have
+# no Node toolchain -- they deploy with a plain `git pull`. So the build output
+# is committed. Run `npm run build` and commit the result after touching any
+# asset or custom view.
 /public/fonts-manifest.dev.json
 /public/hot
 /public/storage

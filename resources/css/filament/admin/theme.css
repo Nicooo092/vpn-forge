@@ -1,0 +1,29 @@
+/*
+ * The admin panel's compiled stylesheet.
+ *
+ * Until this existed the panel shipped no theme at all, so Filament served its
+ * own prebuilt CSS -- which contains only `fi-*` component classes. Any utility
+ * class written in a custom Blade view (grid-cols-3, gap-4, text-sm...) matched
+ * nothing and silently collapsed the layout, which is why several pages had to
+ * be hand-built out of inline styles. Compiling a real theme fixes that at the
+ * root: Tailwind now scans this app's own views and emits the utilities they
+ * use.
+ *
+ * The build output is committed to the repository (see .gitignore) because the
+ * installer is Composer-only -- production servers have no Node toolchain and
+ * deploy with a plain `git pull`.
+ *
+ * Deliberately NOT restyled: no new colour scheme, no custom font, no
+ * decoration. The panel keeps Filament's native look; this file only makes the
+ * framework's own design system reachable from our views.
+ */
+
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+/* Tailwind's `source(none)` (set by the import above) means nothing is scanned
+   unless it is declared here. These three cover every place a class can be
+   written: our PHP that builds Filament components, our own Blade views, and
+   Filament's own views. */
+@source '../../../../app/Filament/**/*.php';
+@source '../../../../resources/views/**/*.blade.php';
+@source '../../../../vendor/filament/**/*.blade.php';

@@ -55,6 +55,13 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            // The panel's own compiled stylesheet, in place of Filament's
+            // prebuilt one. Filament's ships only `fi-*` component classes, so
+            // any utility class in a custom view matched nothing and the layout
+            // collapsed -- this theme is compiled against our views, so the
+            // framework's design system is actually reachable from them.
+            // The build output is committed, since production has no Node.
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
