@@ -86,6 +86,13 @@ export function scrollReveal({ gsap, ScrollTrigger, MOTION }) {
     runDisposers()
     document.querySelectorAll(`[${OWNED_ATTR}]`).forEach((node) => node.remove())
 
+    // Make that cleanup reachable from the runtime's own teardown as well.
+    // runDisposers() only runs at the start of the NEXT boot, so without this a
+    // teardown that is not followed by a boot -- which is exactly what happens
+    // when reduced motion is switched on while the panel is open -- left the
+    // reading hairline on screen and the matchMedia un-reverted.
+    gsap.context(() => () => runDisposers())
+
     const main = document.querySelector('.fi-main')
     if (!main) {
         return
@@ -261,19 +268,33 @@ export function scrollReveal({ gsap, ScrollTrigger, MOTION }) {
             // the CSS layer grows.
             gsap.set(layer, { transition: 'none' })
 
-            gsap.to(layer, {
-                y: distance,
-                opacity: endOpacity,
-                ease: 'none',
-                scrollTrigger: {
-                    trigger: header,
-                    // Starts as the heading passes under the topbar, which is
-                    // the moment it stops being the thing you are looking at.
-                    start: `top top+=${chrome}`,
-                    end: `+=${travel}`,
-                    scrub: 0.35,
+            // fromTo, not to. A to() reads its start values when the tween is
+            // created, and ScrollTrigger initialises it synchronously -- which
+            // happens while the entrance sequence still holds these elements
+            // 24px low at opacity 0. The parallax would adopt THAT as its
+            // resting state, so the first scroll nudge snapped the breadcrumbs,
+            // the page heading and the subheading to invisible and left them
+            // there. Stating the start values explicitly makes the tween
+            // independent of whatever the arrival happens to be mid-way through.
+            gsap.fromTo(
+                layer,
+                { y: 0, opacity: 1 },
+                {
+                    y: distance,
+                    opacity: endOpacity,
+                    ease: 'none',
+                    immediateRender: false,
+                    scrollTrigger: {
+                        trigger: header,
+                        // Starts as the heading passes under the topbar, which is
+                        // the moment it stops being the thing you are looking at.
+                        start: `top top+=${chrome}`,
+                        end: `+=${travel}`,
+                        scrub: 0.35,
+                        invalidateOnRefresh: true,
+                    },
                 },
-            })
+            )
         })
     }
 
@@ -569,7 +590,16 @@ export function scrollReveal({ gsap, ScrollTrigger, MOTION }) {
             // Parallax on a touch scroll is fighting a physics engine you do not
             // control, and a phone rendering a dashboard has better things to
             // composite. Those get the reveal and nothing else.
-            const rich = Boolean(conditions.wide && conditions.fine)
+            // The scrubbed effects below are this module's expensive half: a
+            // busy page can carry two dozen section-header floats plus the
+            // header parallax, each recomputing on every scroll frame. The
+            // performance governor decides whether this machine can afford
+            // them; read defensively, since a module must never depend on
+            // another having run.
+            const tier = window.__vfMotion?.tier ?? 'medium'
+            const affordsScrub = window.__vfMotion?.allow?.('parallax') ?? tier !== 'low'
+
+            const rich = Boolean(conditions.wide && conditions.fine && affordsScrub)
             const floated = new WeakSet()
 
             if (rich) {

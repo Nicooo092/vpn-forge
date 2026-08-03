@@ -103,7 +103,25 @@ export function entrance({ gsap, MOTION }) {
      * `clearProps` on the owning tween hands the element back to the stylesheet
      * afterwards.
      */
-    const RELEASE = 'animation,transition,willChange'
+    /*
+     * `transform` has to be in this list, and its absence was a real bug.
+     *
+     * GSAP always leaves an inline transform on anything it transform-tweens --
+     * at minimum the identity `translate(0, 0)` -- and clearProps only strips it
+     * when the list names a transform property. Two things went wrong without
+     * it. Filament renders action modals INLINE inside the very blocks this
+     * sequence animates, and an element with a transform becomes the containing
+     * block for its position:fixed descendants, so every row and bulk action
+     * modal was re-anchored to a card instead of the viewport. And the first
+     * time GSAP caches a transform it writes `translate: none; scale: none`
+     * inline, which outranks the stylesheet -- so motion.css's hover lift and
+     * press compression stopped applying to every button this touched.
+     *
+     * Naming a transform property makes GSAP take its clearTransforms branch,
+     * which removes the inline transform and hands `translate`/`scale` back to
+     * the stylesheet.
+     */
+    const RELEASE = 'animation,transition,willChange,transform,transformOrigin'
     function release(els) {
         tl.set(els, { animation: 'none', transition: 'none' }, 0)
     }

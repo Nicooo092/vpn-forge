@@ -293,6 +293,17 @@ export function counters({ gsap, ScrollTrigger, MOTION }) {
 
     healInterrupted()
 
+    // The first-appearance claim is written into the DOM, so it has to be given
+    // back when this run is torn down. Without it a teardown that killed a
+    // count mid-flight left the element marked as already-counted, and the next
+    // run skipped it -- the value sat at whatever the interrupted tween had
+    // reached, and the gauges never ran at all.
+    gsap.context(() => () => {
+        document.querySelectorAll(`[${CLAIMED}]`).forEach((element) => {
+            element.removeAttribute(CLAIMED)
+        })
+    })
+
     /**
      * Count one text element up to the value it already shows.
      *
@@ -504,6 +515,16 @@ export function counters({ gsap, ScrollTrigger, MOTION }) {
         .toArray('.fi-wi-chart canvas, .fi-wi-stats-overview-stat-chart canvas')
         .forEach((canvas) => {
             if (canvas.hasAttribute(CLAIMED)) {
+                return
+            }
+
+            // charts.js reaches the real Chart.js instance and draws the series
+            // properly. Where it has taken a canvas, this generic clip wipe is
+            // both redundant and harmful: two triggers on the same node, firing
+            // at different scroll offsets, each clipping and unclipping it. The
+            // specialist wins; this stays as the fallback for any chart it could
+            // not adopt.
+            if (canvas.hasAttribute('data-vf-chart')) {
                 return
             }
 

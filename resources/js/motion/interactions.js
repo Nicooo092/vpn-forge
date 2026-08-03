@@ -496,7 +496,7 @@ function pressFeedback({ gsap, MOTION, clamp, scope, owned }) {
                 duration: MOTION.base,
                 ease: MOTION.spring,
                 overwrite: 'auto',
-                onComplete: () => gsap.set(element, { clearProps: 'willChange' }),
+                onComplete: () => gsap.set(element, { clearProps: 'transform,willChange' }),
             }),
         )
     }
@@ -674,7 +674,7 @@ function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf }) {
         owned(() =>
             gsap.delayedCall(0.6, () => {
                 if (button !== hotButton) {
-                    gsap.set(button, { clearProps: 'willChange' })
+                    gsap.set(button, { clearProps: 'transform,willChange' })
                 }
             }),
         )
@@ -758,7 +758,7 @@ function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf }) {
                 overwrite: 'auto',
                 onComplete: () => {
                     if (card !== hotCard) {
-                        gsap.set(card, { clearProps: 'willChange' })
+                        gsap.set(card, { clearProps: 'transform,willChange' })
                     }
                 },
             }),
