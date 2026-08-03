@@ -1,85 +1,597 @@
 /*
- * vpn-forge motion layer
- * ----------------------
- * The idea: this panel watches a live system, so motion here reports state --
- * arrival, measurement, liveness -- rather than decorating idle pixels. A gauge
- * that fills is showing you it measured something; a row that lifts is telling
- * you it is the one under your cursor. Nothing animates that has nothing to say.
+ * vpn-forge motion layer -- CSS half
+ * ---------------------------------
+ * This panel watches a live system, so motion here reports state -- arrival,
+ * measurement, liveness, focus -- rather than decorating idle pixels. What this
+ * file owns is the part that must never depend on JavaScript having loaded:
+ * elevation, hover and press response, focus, loading skeletons, and the
+ * entrance/exit timing of chrome that Alpine (not GSAP) drives -- modals,
+ * dropdowns, notifications, global search.
  *
- * It hooks Filament's own `fi-*` class names, so it applies across every page
- * including ones with no custom Blade of their own.
+ * The GSAP layer (resources/js/motion.js + resources/js/motion/*) owns page
+ * arrival, scroll choreography and counters. The split matters because the two
+ * layers cannot both drive the same property:
  *
- * Rules this file holds itself to:
- *   - Only `transform`, `opacity` and `filter` are animated. Those are
- *     GPU-composited, so none of this costs layout or paint work -- the panel
- *     has to stay fast on a 2-core box.
- *   - Entrance animations are scoped to containers Livewire MORPHS rather than
- *     replaces (page sections, widgets). Table rows are deliberately excluded:
- *     they are re-created on every poll and sort, so an entrance animation there
- *     would re-fire every 30 seconds and read as flicker.
- *   - Everything sits inside `prefers-reduced-motion: no-preference`. With
- *     reduced motion requested, the panel renders exactly as it did before this
- *     file existed.
+ *   - A CSS `animation` outranks inline styles. `animation-fill-mode: both`
+ *     therefore FREEZES a property against GSAP forever once it finishes. Any
+ *     entrance keyframes on elements GSAP also touches (`.fi-main > *`, stat
+ *     cards, badges) used to live here; they are gone, because they silently
+ *     nailed `transform: none` onto every one of those elements.
+ *   - A CSS `transition` on a property GSAP tweens smears the tween: GSAP
+ *     writes a new value every frame and the transition re-eases each write.
+ *
+ * The way out, used throughout this file: hover/press displacement is expressed
+ * with the INDIVIDUAL `translate:` / `scale:` properties, never `transform:`.
+ * GSAP writes `transform`, the browser composes `translate -> rotate -> scale ->
+ * transform`, and the two layers stack instead of fighting. Filament itself
+ * already works this way (Tailwind 4 emits `translate:` / `scale:` for its own
+ * utilities), so this is the house style rather than a trick.
+ *
+ * Other rules this file holds itself to:
+ *   - Only `translate`, `scale`, `opacity`, `filter`, `box-shadow`,
+ *     `outline-*` and `background-*` are animated. None of them cost layout.
+ *   - Table ROWS never get an entrance animation: tables poll every 30-60s and
+ *     the rows are re-created each time, so anything on arrival would re-fire
+ *     forever and read as flicker. Hover state on rows is fine -- that is a
+ *     response to the operator, not to the poll.
+ *   - Nothing is ever left hidden. The only rules that touch opacity downward
+ *     are loading placeholders (which are not content) and the breathing
+ *     liveness pulse, which bottoms out well above readable.
+ *   - Everything that moves sits inside `prefers-reduced-motion: no-preference`.
+ *     Static styling -- shadows, rings, scrollbars -- stays outside it, because
+ *     asking for reduced motion is not asking for a worse-looking panel.
+ *
+ * It hooks Filament's own `fi-*` class names, all of which were checked against
+ * each package's resources/css and resources/views under vendor/filament
+ * before being written here -- an invented class name compiles to nothing and
+ * fails silently, which this project has been bitten by before. Filament
+ * imports its component CSS with `layer(components)`; this file is deliberately
+ * UNLAYERED, so it outranks all of it without a single `!important`.
  */
 
 :root {
-    /* One duration scale, so unrelated things do not each pick their own speed.
-       Fast enough to feel like a tool, not a presentation. */
+    /* --- Duration scale -------------------------------------------------
+       One scale, so unrelated things do not each pick their own speed. Fast
+       enough to feel like a tool, not a presentation. */
     --vf-press: 90ms;   /* pointer-down feedback */
     --vf-hover: 180ms;  /* hover / focus state changes */
     --vf-enter: 420ms;  /* an element arriving on screen */
     --vf-gauge: 900ms;  /* a value being measured out */
+    --vf-bloom: 520ms;  /* the one-shot focus bloom */
+    --vf-sweep: 1.6s;   /* one pass of the skeleton shimmer */
 
-    /* Expo-out: leaves fast, settles precisely. Reads as engineered rather than
-       bouncy, which suits a panel whose job is telling you the truth quickly. */
+    /* --- Easing ----------------------------------------------------------
+       Expo-out: leaves fast, settles precisely. Reads as engineered rather
+       than bouncy, which suits a panel whose job is telling you the truth
+       quickly. It is the default for anything that reports state. */
     --vf-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
+    /* Softer sibling for long, large changes -- a section-sized shadow
+       growing on full expo reads as a snap. */
+    --vf-ease-soft: cubic-bezier(0.33, 1, 0.68, 1);
+
+    /* For things leaving. Exits should be quicker and less ceremonious than
+       entrances -- you already decided, the panel should get out of the way. */
+    --vf-ease-in: cubic-bezier(0.5, 0, 0.9, 0.2);
+
+    /* Symmetric, for anything that loops (breathing, shimmer). */
+    --vf-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+    /* Spring fallback for engines without `linear()`. ~4% overshoot. */
+    --vf-spring: cubic-bezier(0.34, 1.36, 0.5, 1);
+    --vf-spring-soft: cubic-bezier(0.33, 1.12, 0.5, 1);
+
+    /* Mirrors MOTION.stagger in resources/js/motion.js. Sequencing itself
+       belongs to the JS layer now, but the number lives in both vocabularies
+       so a one-off view can stay in step without importing anything. */
     --vf-stagger: 45ms;
+
+    /* --- Depth -----------------------------------------------------------
+       Filament gives every card `shadow-sm ring-1`, which is correct and
+       completely flat: at rest and under the pointer a section looks the same.
+       These tokens replace that with a three-step elevation scale. The ring is
+       folded in as the first shadow layer because Tailwind implements `ring-1`
+       as a box-shadow too, and setting `box-shadow` at all replaces the whole
+       composed stack -- so the ring has to be re-drawn here or it disappears.
+
+       Colours are derived from Filament's own runtime palette variables
+       (`--gray-950`, `--primary-*`, emitted inline by FilamentAsset), with
+       literal fallbacks so a stylesheet loading before that inline <style>
+       still renders something sane. */
+    --vf-ink: var(--gray-950, oklch(0.141 0.005 285.823));
+    --vf-accent: var(--primary-600, oklch(0.666 0.179 58.318));
+
+    --vf-hairline: color-mix(in oklab, var(--vf-ink) 6%, transparent);
+    --vf-hairline-strong: color-mix(in oklab, var(--vf-ink) 11%, transparent);
+
+    /* Rest: a card sitting on the page. */
+    --vf-elev-1:
+        0 0 0 1px var(--vf-hairline),
+        0 1px 2px -1px color-mix(in oklab, var(--vf-ink) 8%, transparent),
+        0 4px 10px -6px color-mix(in oklab, var(--vf-ink) 10%, transparent);
+
+    /* Raised: the card under the pointer. */
+    --vf-elev-2:
+        0 0 0 1px var(--vf-hairline-strong),
+        0 2px 4px -2px color-mix(in oklab, var(--vf-ink) 8%, transparent),
+        0 10px 20px -8px color-mix(in oklab, var(--vf-ink) 14%, transparent),
+        0 20px 36px -24px color-mix(in oklab, var(--vf-ink) 18%, transparent);
+
+    /* Floating: modals and dropdowns, which sit above the whole page. */
+    --vf-elev-3:
+        0 0 0 1px var(--vf-hairline-strong),
+        0 6px 12px -6px color-mix(in oklab, var(--vf-ink) 12%, transparent),
+        0 20px 40px -12px color-mix(in oklab, var(--vf-ink) 20%, transparent),
+        0 40px 72px -32px color-mix(in oklab, var(--vf-ink) 26%, transparent);
+
+    /* Focus halo. Deliberately the panel's own accent rather than a browser
+       blue, so a focused control reads as part of this product. */
+    --vf-halo: color-mix(in oklab, var(--vf-accent) 42%, transparent);
+
+    /* Skeleton shimmer. Two stops so the sweep has a bright core and a soft
+       falloff instead of reading as a moving rectangle. */
+    --vf-sheen: color-mix(in oklab, var(--vf-ink) 5%, transparent);
+    --vf-sheen-core: color-mix(in oklab, var(--vf-ink) 9%, transparent);
+
+    --vf-scroll-thumb: color-mix(in oklab, var(--vf-ink) 22%, transparent);
+
+    /* One-shot highlight for a value that just changed. */
+    --vf-flash-bg: color-mix(in oklab, var(--vf-accent) 22%, transparent);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    /* --- Arrival ---------------------------------------------------------
-       Page content rises into place. The stagger is short and capped: it should
-       read as one settling movement, not as items queueing up.               */
+/*
+ * Dark mode. Filament defines the variant as `&:where(.dark, .dark *)` and the
+ * theme switcher toggles `.dark` on <html>, so overriding the tokens on `.dark`
+ * lets them inherit down the whole tree from one rule.
+ *
+ * The values are not just "the same shadows, darker". On a dark surface a drop
+ * shadow barely reads, so depth has to come from the edges instead: a brighter
+ * hairline ring, plus a 1px inset highlight along the top of the card that
+ * reads as light catching its edge. The drop shadows stay, but their job is
+ * separation from the page, not the sense of height.
+ */
+.dark {
+    --vf-hairline: color-mix(in oklab, white 10%, transparent);
+    --vf-hairline-strong: color-mix(in oklab, white 18%, transparent);
+    --vf-inner-edge: color-mix(in oklab, white 5%, transparent);
+    --vf-accent: var(--primary-400, oklch(0.828 0.155 84.429));
 
-    @keyframes vf-rise {
+    --vf-elev-1:
+        inset 0 1px 0 0 var(--vf-inner-edge),
+        0 0 0 1px var(--vf-hairline),
+        0 1px 2px -1px oklch(0 0 0 / 0.5),
+        0 6px 16px -10px oklch(0 0 0 / 0.6);
+
+    --vf-elev-2:
+        inset 0 1px 0 0 color-mix(in oklab, white 8%, transparent),
+        0 0 0 1px var(--vf-hairline-strong),
+        0 2px 4px -2px oklch(0 0 0 / 0.5),
+        0 12px 26px -10px oklch(0 0 0 / 0.65),
+        0 24px 44px -28px oklch(0 0 0 / 0.7);
+
+    --vf-elev-3:
+        inset 0 1px 0 0 color-mix(in oklab, white 8%, transparent),
+        0 0 0 1px var(--vf-hairline-strong),
+        0 8px 16px -8px oklch(0 0 0 / 0.55),
+        0 24px 48px -12px oklch(0 0 0 / 0.7),
+        0 48px 80px -32px oklch(0 0 0 / 0.75);
+
+    --vf-halo: color-mix(in oklab, var(--vf-accent) 40%, transparent);
+
+    --vf-sheen: color-mix(in oklab, white 6%, transparent);
+    --vf-sheen-core: color-mix(in oklab, white 11%, transparent);
+
+    --vf-scroll-thumb: color-mix(in oklab, white 16%, transparent);
+
+    --vf-flash-bg: color-mix(in oklab, var(--vf-accent) 18%, transparent);
+}
+
+/*
+ * Real springs, where the engine has them.
+ *
+ * A cubic-bezier can only overshoot once and cannot come back with decreasing
+ * amplitude, so it never actually feels like mass on a spring. `linear()`
+ * can: these are a damped harmonic oscillator (zeta 0.62 / 0.80) sampled at
+ * even intervals, so the control overshoots, returns, and settles.
+ *
+ * Behind @supports because `linear()` landed later than the rest of the
+ * baseline this panel targets; without it the cubic-bezier fallbacks above
+ * stay in force and everything still moves, just with one bounce instead of a
+ * decaying one.
+ */
+@supports (transition-timing-function: linear(0, 1)) {
+    :root {
+        --vf-spring: linear(
+            0, 0.1007, 0.319, 0.5607, 0.7709, 0.9258, 1.0226, 1.0706, 1.0835,
+            1.0752, 1.0571, 1.0369, 1.0193, 1.0063, 0.9982, 0.9941, 0.993,
+            0.9937, 0.9952, 0.9969, 0.9984, 0.9995, 1
+        );
+
+        --vf-spring-soft: linear(
+            0, 0.1144, 0.338, 0.5618, 0.7412, 0.8665, 0.9447, 0.9878, 1.008,
+            1.0147, 1.0145, 1.0115, 1.008, 1.005, 1.0027, 1.0013, 1.0004, 1, 1
+        );
+    }
+}
+
+/* ======================================================================
+   STATIC LAYER
+   Shadows, rings and scrollbars. Outside the reduced-motion guard on
+   purpose: none of it moves, and an operator who asked for less motion
+   should still get the panel that was designed, not the flat one.
+   ====================================================================== */
+
+/* Sections, stat cards and table containers all carry the same rest
+   elevation, so a dashboard reads as one plane of cards rather than three
+   slightly different ones. The `:not()` chain mirrors Filament's own: an
+   uncontained section has no surface to raise, and an aside section puts its
+   surface on the inner content container instead. */
+.fi-section:not(.fi-section-not-contained):not(.fi-aside),
+.fi-section:not(.fi-section-not-contained).fi-aside > .fi-section-content-ctn,
+.fi-wi-stats-overview-stat,
+.fi-ta-ctn,
+.vf-elevate {
+    box-shadow: var(--vf-elev-1);
+}
+
+/* Overlays sit above everything, so they get the deepest step -- this is the
+   main thing that stops a modal from looking pasted onto the page. */
+.fi-modal > .fi-modal-window-ctn > .fi-modal-window,
+.fi-dropdown-panel,
+.fi-global-search-results-ctn {
+    box-shadow: var(--vf-elev-3);
+}
+
+/* The lazy-widget placeholder is a `.fi-section` too, so it already has the
+   card elevation. It needs a containing block and a clip for the shimmer
+   pseudo-element below; both are safe here because the placeholder's only
+   child is a screen-reader label. */
+.fi-loading-section {
+    position: relative;
+    overflow: hidden;
+}
+
+/* The active navigation item gets an accent bar on its leading edge. Static,
+   because it is a design element rather than an animation -- an operator who
+   asked for less motion should still be able to see where they are. The bar
+   only draws itself in under the motion layer below. `.fi-sidebar-item-btn` is
+   already `position: relative` (Filament's own rule), so the pseudo-element
+   anchors without changing anything about the layout. */
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn::before {
+    content: '';
+    position: absolute;
+    inset-block: 0.375rem;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 1px;
+    background-color: var(--vf-accent);
+}
+
+/* Scrollbars, on the panels that actually scroll. Filament leaves these to the
+   OS, which on Windows means a chunky light-grey bar sitting inside a dark
+   card. Scoped rather than global: the page's own scrollbar belongs to the
+   browser. */
+.fi-ta-ctn,
+.fi-modal > .fi-modal-window-ctn > .fi-modal-window,
+.fi-dropdown-panel.fi-scrollable,
+.fi-global-search-results-ctn {
+    scrollbar-width: thin;
+    scrollbar-color: var(--vf-scroll-thumb) transparent;
+}
+
+/* ======================================================================
+   MOTION LAYER
+   Everything below moves. With reduced motion requested, none of it
+   applies and the panel renders exactly as Filament ships it.
+   ====================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+    /* --- Depth response --------------------------------------------------
+       Cards lift toward the pointer. Sections change SHADOW ONLY and never
+       move: a `transform`/`translate` on a section would make it the
+       containing block for any `position: fixed` descendant, and Filament
+       renders action modals inside the section that owns the action. A
+       section that quietly breaks its own modal while the cursor sits over it
+       is not worth two pixels of lift. Stat cards have no such descendants,
+       so those get the full movement. */
+
+    .fi-section:not(.fi-section-not-contained):not(.fi-aside),
+    .fi-section:not(.fi-section-not-contained).fi-aside > .fi-section-content-ctn {
+        transition: box-shadow var(--vf-enter) var(--vf-ease-soft);
+    }
+
+    .fi-section:not(.fi-section-not-contained):not(.fi-aside):hover,
+    .fi-section:not(.fi-section-not-contained).fi-aside:hover > .fi-section-content-ctn {
+        box-shadow: var(--vf-elev-2);
+    }
+
+    /* Stat cards: the dashboard's headline numbers, and often links. They get
+       the full lift. `translate` rather than `transform` so a GSAP tween on
+       the same card composes with this instead of being smeared by it. */
+    .fi-wi-stats-overview-stat {
+        transition-property: translate, scale, box-shadow;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .fi-wi-stats-overview-stat:hover {
+        translate: 0 -3px;
+        box-shadow: var(--vf-elev-2);
+    }
+
+    /* Only the ones that actually navigate acknowledge a press. */
+    a.fi-wi-stats-overview-stat:active {
+        translate: 0 -1px;
+        scale: 0.995;
+        transition-duration: var(--vf-press);
+        transition-timing-function: var(--vf-ease);
+    }
+
+    /* Opt-in for the panel's own custom cards, which are not Filament
+       sections. Same contract as a stat card; its rest elevation is set in the
+       static layer above so a reduced-motion operator still gets the card. */
+    .vf-elevate {
+        transition-property: translate, box-shadow;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .vf-elevate:hover {
+        translate: 0 -3px;
+        box-shadow: var(--vf-elev-2);
+    }
+
+    /* --- Response --------------------------------------------------------
+       Pointer feedback on controls. Small numbers on purpose: a control that
+       moves a lot feels toy-like, and these are controls that revoke keys and
+       overwrite databases. The spring is what does the work -- the button
+       arrives, overshoots by a hair and settles, which is the difference
+       between "a hover style" and "a thing that responded to you". */
+
+    .fi-btn,
+    .fi-icon-btn,
+    .fi-link {
+        transition-property: translate, scale, box-shadow, background-color, color, filter, opacity;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-spring);
+    }
+
+    /* Lift only. Filament already changes the background on hover, so adding a
+       brightness filter here would be the same information twice. */
+    .fi-btn:not(.fi-disabled):not([disabled]):hover,
+    .fi-icon-btn:not(.fi-disabled):not([disabled]):hover {
+        translate: 0 -1px;
+    }
+
+    /* Press collapses the lift and compresses slightly, on the fast scale and
+       without the spring -- a press should feel damped, not springy. */
+    .fi-btn:not(.fi-disabled):not([disabled]):active,
+    .fi-icon-btn:not(.fi-disabled):not([disabled]):active {
+        translate: 0 0;
+        scale: 0.97;
+        filter: brightness(0.98);
+        transition-duration: var(--vf-press);
+        transition-timing-function: var(--vf-ease);
+    }
+
+    /* The icon inside a button trails the button by a touch, which is what
+       makes the press read as a physical object rather than a scaling image.
+       `color` is re-declared because Filament transitions the icon's colour on
+       its own and setting `transition-property` at all would drop it. */
+    .fi-btn > .fi-icon,
+    .fi-icon-btn > .fi-icon {
+        transition:
+            translate var(--vf-hover) var(--vf-spring-soft),
+            color var(--vf-hover) var(--vf-ease);
+    }
+
+    .fi-btn:not(.fi-disabled):not([disabled]):active > .fi-icon {
+        translate: 0 0.5px;
+    }
+
+    /* --- Focus -----------------------------------------------------------
+       Filament's focus ring is a `ring-2` in the control's own colour, and it
+       appears instantly. That is correct and it stays: accessibility does not
+       get to depend on an animation finishing.
+
+       What is added is a one-shot bloom -- a wider halo that collapses inward
+       onto the ring and dissolves. It is drawn with `outline`, which does not
+       participate in layout and does not touch Filament's ring (a box-shadow),
+       so the two cannot fight. No fill mode, so the moment the animation ends
+       the outline is gone and only Filament's ring remains: nothing is left
+       permanently drawn on the control, including in forced-colours mode. */
+
+    @keyframes vf-focus-bloom {
+        from {
+            outline: 2px solid transparent;
+            outline-offset: 10px;
+        }
+        35% {
+            outline: 2px solid var(--vf-halo);
+            outline-offset: 3px;
+        }
+        to {
+            outline: 2px solid transparent;
+            outline-offset: 3px;
+        }
+    }
+
+    .fi-btn:focus-visible,
+    .fi-icon-btn:focus-visible,
+    .fi-link:focus-visible,
+    .fi-sidebar-item-btn:focus-visible,
+    .fi-wi-stats-overview-stat:focus-visible {
+        animation: vf-focus-bloom var(--vf-bloom) var(--vf-ease);
+    }
+
+    /* Inputs bloom on focus-WITHIN, because the focus actually lands on the
+       inner <input> while the ring belongs to the wrapper. */
+    .fi-input-wrp {
+        transition-property: box-shadow, background-color;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-ease);
+    }
+
+    .fi-input-wrp:focus-within {
+        animation: vf-focus-bloom var(--vf-bloom) var(--vf-ease);
+    }
+
+    /* --- Navigation ------------------------------------------------------
+       The sidebar is the one surface an operator uses on every page, so it is
+       worth more than a background swap.
+
+       NOTE for anyone reading the git history: this used to target
+       `.fi-sidebar-item-button`, which does not exist. Filament's class is
+       `.fi-sidebar-item-btn` (vendor/filament/filament/resources/views/
+       components/sidebar/item.blade.php:54). The old rules were dead. */
+
+    .fi-sidebar-item-btn {
+        transition-property: translate, background-color, color;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover {
+        translate: 2px 0;
+    }
+
+    [dir='rtl'] .fi-sidebar-item-has-url > .fi-sidebar-item-btn:hover {
+        translate: -2px 0;
+    }
+
+    .fi-sidebar-item-btn:active {
+        scale: 0.985;
+        transition-duration: var(--vf-press);
+        transition-timing-function: var(--vf-ease);
+    }
+
+    /* The accent bar (drawn in the static layer above) grows out from its own
+       centre when the item becomes active. This is the panel telling you where
+       you landed -- and because the panel runs SPA navigation, the class change
+       replays it on every page change, which is exactly when the information is
+       useful. Safe to fill forwards: it is a decorative pseudo-element, so no
+       JS will ever want the property back. */
+    .fi-sidebar-item.fi-active > .fi-sidebar-item-btn::before {
+        transform-origin: center;
+        animation: vf-accent-in var(--vf-enter) var(--vf-spring) both;
+    }
+
+    @keyframes vf-accent-in {
         from {
             opacity: 0;
-            transform: translate3d(0, 10px, 0);
+            transform: scaleY(0);
         }
         to {
             opacity: 1;
-            transform: none;
+            transform: scaleY(1);
         }
     }
 
-    .fi-main > * {
-        animation: vf-rise var(--vf-enter) var(--vf-ease) both;
+    /* The active icon pops once as it takes the accent colour. No fill mode:
+       the icon must end at its natural size even if something else later
+       wants to transform it. Scale only -- the icon is never faded, so it is
+       readable at every frame. */
+    .fi-sidebar-item.fi-active > .fi-sidebar-item-btn > .fi-icon {
+        animation: vf-pop 380ms var(--vf-spring);
     }
 
-    .fi-main > :nth-child(2) { animation-delay: calc(var(--vf-stagger) * 1); }
-    .fi-main > :nth-child(3) { animation-delay: calc(var(--vf-stagger) * 2); }
-    .fi-main > :nth-child(4) { animation-delay: calc(var(--vf-stagger) * 3); }
-    .fi-main > :nth-child(n + 5) { animation-delay: calc(var(--vf-stagger) * 4); }
-
-    /* Stat cards settle individually -- a row of gauges reading at once is the
-       one place a visible sequence carries meaning (each is its own measure). */
-    .fi-wi-stats-overview-stat {
-        animation: vf-rise var(--vf-enter) var(--vf-ease) both;
+    @keyframes vf-pop {
+        from {
+            transform: scale(0.8);
+        }
+        to {
+            transform: scale(1);
+        }
     }
 
-    .fi-wi-stats-overview-stat:nth-child(2) { animation-delay: calc(var(--vf-stagger) * 1); }
-    .fi-wi-stats-overview-stat:nth-child(3) { animation-delay: calc(var(--vf-stagger) * 2); }
-    .fi-wi-stats-overview-stat:nth-child(4) { animation-delay: calc(var(--vf-stagger) * 3); }
-    .fi-wi-stats-overview-stat:nth-child(5) { animation-delay: calc(var(--vf-stagger) * 4); }
-    .fi-wi-stats-overview-stat:nth-child(6) { animation-delay: calc(var(--vf-stagger) * 5); }
-    .fi-wi-stats-overview-stat:nth-child(n + 7) { animation-delay: calc(var(--vf-stagger) * 6); }
+    /* --- Loading ---------------------------------------------------------
+       Filament renders a lazy widget's placeholder as a `.fi-section
+       .fi-loading-section` box with `animate-pulse` -- a card fading in and
+       out, which reads as "broken" more than "loading" (see
+       vendor/filament/support/resources/css/components/loading-section.css).
+
+       Replaced with the real thing: a gentle breath on the card, plus a sheen
+       sweeping across it. The sweep is a pseudo-element moved with
+       `transform`, so it is a composited layer and costs nothing per frame --
+       as opposed to animating `background-position`, which repaints the whole
+       card every frame. */
+
+    @keyframes vf-skeleton-breathe {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.72; }
+    }
+
+    @keyframes vf-sheen {
+        from { transform: translate3d(-100%, 0, 0); }
+        to   { transform: translate3d(100%, 0, 0); }
+    }
+
+    .fi-loading-section,
+    .vf-skeleton {
+        animation: vf-skeleton-breathe 2.6s var(--vf-ease-io) infinite;
+    }
+
+    .fi-loading-section::after,
+    .vf-skeleton::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        /* Angled rather than vertical: a diagonal sweep reads as light moving
+           across a surface, a vertical one reads as a loading bar. */
+        background-image: linear-gradient(
+            105deg,
+            transparent 28%,
+            var(--vf-sheen) 45%,
+            var(--vf-sheen-core) 50%,
+            var(--vf-sheen) 55%,
+            transparent 72%
+        );
+        animation: vf-sheen var(--vf-sweep) var(--vf-ease-io) infinite;
+    }
+
+    /* A dashboard usually has several lazy widgets. Sweeping them in lockstep
+       looks mechanical, so the sweeps are offset. The delays are NEGATIVE, so
+       each one starts already part-way through its cycle rather than sitting
+       still waiting for its turn. */
+    .fi-loading-section:nth-child(2)::after   { animation-delay: -0.40s; }
+    .fi-loading-section:nth-child(3)::after   { animation-delay: -0.80s; }
+    .fi-loading-section:nth-child(n + 4)::after { animation-delay: -1.20s; }
+
+    /* The generic-purpose skeleton needs its own containing block; the
+       Filament one already got it in the static layer above. */
+    .vf-skeleton {
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* A table waiting on its first page of records. Same breath, no sweep --
+       the container can be tall enough that a sweep would take too long to
+       cross, and adding `overflow: hidden` here would clip row dropdowns. */
+    .fi-ta.fi-loading,
+    .fi-ta-ctn.fi-loading {
+        animation: vf-skeleton-breathe 2.6s var(--vf-ease-io) infinite;
+    }
+
+    /* In-flight feedback is not a rule of its own: Filament disables controls
+       with `wire:loading.attr="disabled"` while a request is out, and a
+       disabled control is `opacity-70`. `opacity` is in the button transition
+       list above, so that dim fades in and back out on its own -- no selector
+       here has to guess at Livewire's attribute names, which are configurable
+       (`filament.livewire_loading_delay`) and would have been dead code half
+       the time. */
 
     /* --- Measurement -----------------------------------------------------
-       A gauge fills from its left edge instead of appearing already full, so the
-       bar reads as a measurement being taken. scaleX is used rather than width
-       so the inline percentage stays the source of truth and the animation stays
-       off the layout path.                                                    */
+       A gauge fills from its left edge instead of appearing already full, so
+       the bar reads as a measurement being taken. scaleX rather than width, so
+       the inline percentage stays the source of truth and the animation stays
+       off the layout path.
+
+       Fill mode is `backwards`, NOT `both`. `both` would leave the animation
+       holding `transform` forever, which would nail the bar against the JS
+       counters module if that module also animates it. With `backwards` the
+       end state is identical (scaleX(1) is what `transform: none` already
+       looks like) and CSS lets go the moment it finishes. */
 
     @keyframes vf-measure {
         from { transform: scaleX(0); }
@@ -88,13 +600,13 @@
 
     .vf-gauge-fill {
         transform-origin: left center;
-        animation: vf-measure var(--vf-gauge) var(--vf-ease) both;
+        animation: vf-measure var(--vf-gauge) var(--vf-ease) backwards;
     }
 
     /* --- Liveness --------------------------------------------------------
        Opt-in, for states that are genuinely transient (a service still
-       provisioning). A slow breath, not a blink -- it should be noticeable only
-       when you look at it.                                                    */
+       provisioning). A slow breath, not a blink -- noticeable only when you
+       look at it, and never dim enough to be unreadable. */
 
     @keyframes vf-breathe {
         0%, 100% { opacity: 1; }
@@ -102,86 +614,163 @@
     }
 
     .vf-live {
-        animation: vf-breathe 2.4s ease-in-out infinite;
+        animation: vf-breathe 2.4s var(--vf-ease-io) infinite;
     }
 
-    /* --- In flight -------------------------------------------------------
-       While Livewire is fetching, the content it will replace recedes slightly.
-       This is the panel admitting it is mid-request instead of freezing.      */
-
-    [wire\:loading] {
-        transition: opacity var(--vf-hover) var(--vf-ease);
+    /* One-shot highlight for a value that just changed. Add the class, remove
+       it on animationend. Background only, so the text never moves and never
+       stops being readable mid-flash. */
+    @keyframes vf-flash {
+        from { background-color: var(--vf-flash-bg); }
+        to   { background-color: transparent; }
     }
 
-    /* --- Response --------------------------------------------------------
-       Pointer feedback. Small numbers on purpose: a control that moves a lot
-       feels toy-like, and these are controls that revoke keys and overwrite
-       databases.                                                              */
-
-    .fi-btn {
-        transition:
-            transform var(--vf-hover) var(--vf-ease),
-            box-shadow var(--vf-hover) var(--vf-ease),
-            filter var(--vf-hover) var(--vf-ease);
+    .vf-flash {
+        animation: vf-flash var(--vf-gauge) var(--vf-ease);
     }
 
-    .fi-btn:hover {
-        transform: translate3d(0, -1px, 0);
-    }
+    /* --- Tables ----------------------------------------------------------
+       Rows highlight without moving: shifting a row you are trying to read a
+       value from would be actively unhelpful. The accent on the leading edge
+       is what makes a wide table scannable -- it marks where the row you are
+       pointing at begins, which matters when the value you want is 1400px to
+       the right of it. */
 
-    .fi-btn:active {
-        transform: translate3d(0, 0, 0) scale(0.985);
-        transition-duration: var(--vf-press);
-    }
-
-    /* Sections lift a little under the pointer, which makes a long list of
-       archives or exports scannable by feel as well as by eye. */
-    .fi-section {
-        transition:
-            transform var(--vf-hover) var(--vf-ease),
-            box-shadow var(--vf-hover) var(--vf-ease);
-    }
-
-    /* Table rows highlight without moving -- shifting a row you are trying to
-       read a value from would be actively unhelpful. */
     .fi-ta-row {
-        transition: background-color var(--vf-hover) var(--vf-ease);
+        transition-property: background-color, box-shadow;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-ease);
     }
 
-    /* Navigation: the active item earns a growing accent rather than a hard
-       swap, so moving through the sidebar feels continuous. */
-    .fi-sidebar-item-button {
-        transition:
-            background-color var(--vf-hover) var(--vf-ease),
-            color var(--vf-hover) var(--vf-ease),
-            transform var(--vf-hover) var(--vf-ease);
+    .fi-ta-row > *:first-child {
+        transition: box-shadow var(--vf-hover) var(--vf-ease);
     }
 
-    .fi-sidebar-item-button:hover {
-        transform: translate3d(2px, 0, 0);
+    .fi-ta-row.fi-clickable:hover > *:first-child {
+        box-shadow: inset 2px 0 0 0 var(--vf-accent);
     }
 
-    /* Badges pop in slightly. Status is the thing an operator scans for first,
-       so it is worth one frame of attention when it changes. */
-    @keyframes vf-badge-in {
-        from {
-            opacity: 0;
-            transform: scale(0.92);
-        }
-        to {
-            opacity: 1;
-            transform: none;
-        }
+    [dir='rtl'] .fi-ta-row.fi-clickable:hover > *:first-child {
+        box-shadow: inset -2px 0 0 0 var(--vf-accent);
     }
+
+    /* Sort controls: the arrow leans in the direction you are about to sort. */
+    .fi-ta-header-cell-sort-btn {
+        transition: color var(--vf-hover) var(--vf-ease);
+    }
+
+    .fi-ta-header-cell-sort-btn .fi-icon {
+        transition: translate var(--vf-hover) var(--vf-spring);
+    }
+
+    .fi-ta-header-cell-sort-btn:hover .fi-icon {
+        translate: 0 1px;
+    }
+
+    /* --- Badges ----------------------------------------------------------
+       Transition only, no entrance animation. Badges live inside table cells,
+       and those cells are re-rendered on every 30-60s poll -- an entrance
+       here would re-fire forever. State CHANGES still read, because the
+       colour transitions rather than snapping. */
 
     .fi-badge {
-        animation: vf-badge-in var(--vf-hover) var(--vf-ease) both;
+        transition-property: background-color, color, box-shadow, scale;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-ease);
     }
 
-    /* Inputs: focus should feel like the field came forward to meet you. */
-    .fi-input-wrp {
-        transition:
-            box-shadow var(--vf-hover) var(--vf-ease),
-            border-color var(--vf-hover) var(--vf-ease);
+    a.fi-badge:hover,
+    button.fi-badge:hover {
+        scale: 1.04;
+    }
+
+    /* --- Overlays --------------------------------------------------------
+       Filament drives modals with Alpine class transitions: `.fi-transition-
+       enter` / `-leave` carry the duration and `all` is the property (see
+       vendor/filament/support/resources/css/components/modal.css). Overriding
+       the duration and easing is enough to change how the whole thing feels,
+       and Alpine reads the computed duration back so it stays in sync.
+
+       Entrance springs; exit does not. A modal that bounces on the way out is
+       arguing with a decision you already made. */
+
+    .fi-modal > .fi-modal-window-ctn > .fi-modal-window.fi-transition-enter {
+        transition-duration: 380ms;
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .fi-modal > .fi-modal-window-ctn > .fi-modal-window.fi-transition-leave {
+        transition-duration: 180ms;
+        transition-timing-function: var(--vf-ease-in);
+    }
+
+    /* The overlay blurs the page behind it. Filament already fades its opacity
+       over 300ms, and an element at opacity 0 renders no backdrop at all, so
+       the blur rides that fade in for free -- no second animation, and no
+       backdrop work at all while no modal is open. Kept modest: this is the
+       one effect here that costs real GPU time on a 2-core box. */
+    .fi-modal > .fi-modal-close-overlay {
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+    }
+
+    /* Dropdowns rise into place instead of appearing. Filament's own enter
+       state is opacity alone (`.fi-opacity-0`); the offset and scale are
+       added here. `translate`/`scale` rather than `transform` because
+       `.fi-global-search-results-ctn` below relies on holding a `transform` of
+       its own, and the same discipline everywhere is what keeps that safe.
+       Alpine's floating-ui positions these with `left`/`top`, so none of this
+       collides with placement. */
+    .fi-dropdown-panel {
+        transform-origin: top center;
+        transition-duration: 220ms;
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .fi-dropdown-panel.fi-opacity-0 {
+        translate: 0 -6px;
+        scale: 0.97;
+    }
+
+    /* Global search results. `translate` is mandatory here, not stylistic:
+       Filament pins a `transform: translateZ(0)` on this element to work
+       around a Safari stacking bug, and overwriting it would reintroduce that
+       bug. The individual property composes with theirs instead. */
+    .fi-global-search-results-ctn {
+        transition-duration: 240ms;
+        transition-timing-function: var(--vf-spring);
+    }
+
+    .fi-global-search-results-ctn.fi-transition-enter-start,
+    .fi-global-search-results-ctn.fi-transition-leave-end {
+        translate: 0 -6px;
+    }
+
+    /* Notifications slide in from the edge with Filament's own translate;
+       this only replaces the easing, so they arrive with weight and settle
+       instead of gliding to a stop. */
+    .fi-no-notification {
+        transition-timing-function: var(--vf-spring);
+    }
+
+    /* --- Chrome ----------------------------------------------------------
+       Everything left that should acknowledge the pointer. Cheap, one-line
+       rules; the point is that nothing in the panel changes state instantly
+       except the things that must (focus rings, disabled states). */
+
+    .fi-tabs-item,
+    .fi-dropdown-list-item,
+    .fi-pagination-item-btn {
+        transition-property: background-color, color, translate;
+        transition-duration: var(--vf-hover);
+        transition-timing-function: var(--vf-ease);
+    }
+
+    .fi-dropdown-list-item:hover {
+        translate: 1px 0;
+    }
+
+    [dir='rtl'] .fi-dropdown-list-item:hover {
+        translate: -1px 0;
     }
 }

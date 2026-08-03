@@ -45,6 +45,25 @@ class PanelThemeTest extends TestCase
         $this->assertGreaterThan(1024, filesize($file), 'The compiled theme looks empty.');
     }
 
+    public function test_the_panel_loads_the_motion_runtime(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $manifest = json_decode((string) file_get_contents(public_path('build/manifest.json')), true);
+
+        $this->assertArrayHasKey(
+            'resources/js/motion.js',
+            $manifest,
+            'The motion runtime is not in the build manifest -- run `npm run build`.'
+        );
+
+        // Injected by a render hook rather than imported, so a broken hook
+        // would silently ship a panel with no motion at all.
+        $this->get('/admin')
+            ->assertOk()
+            ->assertSee($manifest['resources/js/motion.js']['file'], escape: false);
+    }
+
     public function test_the_panel_renders_and_links_the_compiled_theme(): void
     {
         $this->actingAs(User::factory()->create());

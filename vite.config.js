@@ -13,6 +13,10 @@ export default defineConfig({
                 'resources/css/app.css',
                 'resources/js/app.js',
                 'resources/css/filament/admin/theme.css',
+                // The panel's motion runtime (GSAP). Injected into the panel by
+                // a Filament render hook rather than imported by the theme, so
+                // it can be deferred and stays out of the CSS critical path.
+                'resources/js/motion.js',
             ],
             refresh: true,
             fonts: [

@@ -14,11 +14,13 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -74,6 +76,15 @@ class AdminPanelProvider extends PanelProvider
             // 2-core box that turns an idle cursor drifting across the sidebar
             // into database load.
             ->spa(hasPrefetching: false)
+            // The GSAP motion runtime. Injected after the panel's own scripts
+            // so Livewire and Alpine exist before it binds to
+            // `livewire:navigated`, which is what re-runs the animations after
+            // an SPA navigation. Vite emits it as a module, so it is deferred
+            // by default and never blocks first paint.
+            ->renderHook(
+                PanelsRenderHook::SCRIPTS_AFTER,
+                fn (): string => Blade::render("@vite('resources/js/motion.js')"),
+            )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
