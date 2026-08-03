@@ -18,8 +18,6 @@ class Backups extends Page
 
     protected static ?int $navigationSort = 90;
 
-    protected ?string $pollingInterval = '5s';
-
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null
     {
         return 'heroicon-o-archive-box';
@@ -42,13 +40,17 @@ class Backups extends Page
                 ->label(__('Create backup'))
                 ->icon('heroicon-o-plus')
                 ->requiresConfirmation()
-                ->modalDescription(__('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background and appears below when it is ready.'))
+                ->modalDescription(__('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background on the privileged worker.'))
+                // The archive is written by a queued job, so it does not exist
+                // yet when this returns and the page does not watch for it.
+                // Saying so beats promising a list that never updates on its
+                // own.
                 ->action(function (): void {
                     CreateBackup::dispatch();
 
                     Notification::make()
                         ->title(__('Backup started'))
-                        ->body(__('It will appear in the list once the worker has finished.'))
+                        ->body(__('It takes a few seconds. Reload this page to see it in the list below.'))
                         ->success()
                         ->send();
                 }),

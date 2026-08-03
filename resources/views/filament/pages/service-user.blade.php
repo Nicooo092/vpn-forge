@@ -2,69 +2,72 @@
     @php($user = $this->record)
     @php($ratio = $user->dataUsageRatio())
 
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start;">
-        <div style="flex:1 1 18rem;min-width:0;">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div>
             <x-filament::section>
                 <x-slot name="heading">{{ __('Details') }}</x-slot>
 
-                <div style="display:flex;flex-direction:column;gap:0.75rem;">
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Service') }}</span>
+                <div class="flex flex-col gap-3">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Service') }}</span>
                         <span>{{ $user->service->name }} ({{ $user->service->interface_name }})</span>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Tunnel address') }}</span>
-                        <span style="font-family:ui-monospace,monospace;">{{ $user->tunnel_ip }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Tunnel address') }}</span>
+                        <span class="font-mono">{{ $user->tunnel_ip }}</span>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Status') }}</span>
-                        <span style="display:inline-flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Status') }}</span>
+                        <span class="inline-flex flex-wrap items-center gap-2">
                             <x-filament::badge :color="$user->status->getColor()">
                                 {{ $user->status->getLabel() }}
                             </x-filament::badge>
                             @if ($user->suspended_reason)
-                                <span style="opacity:0.65;">{{ $user->suspended_reason }}</span>
+                                {{-- suspended_reason is stored in English by the enforcement
+                                     jobs, so it is translated here at the display site rather
+                                     than on the way into the database. --}}
+                                <span class="text-sm text-gray-500 dark:text-gray-400">{{ __($user->suspended_reason) }}</span>
                             @endif
                         </span>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Logging') }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Logging') }}</span>
                         <span>{{ $user->loggingEffective() ? __('Recorded') : __('Not recorded') }}</span>
                     </div>
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Access expires') }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Access expires') }}</span>
                         <span>{{ $user->expires_at?->toDayDateTimeString() ?? __('never') }}</span>
                     </div>
                     @if (filled($user->dns_override))
-                        <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                            <span style="opacity:0.65;">{{ __('Custom DNS') }}</span>
-                            <span style="font-family:ui-monospace,monospace;">{{ implode(', ', $user->dns_override) }}</span>
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Custom DNS') }}</span>
+                            <span class="font-mono">{{ implode(', ', $user->dns_override) }}</span>
                         </div>
                     @endif
-                    <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Speed limit') }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Speed limit') }}</span>
                         <span>{{ $user->rate_limit_kbps ? __(':speed Mbit/s (down + up)', ['speed' => round($user->rate_limit_kbps / 1000, 2)]) : __('unlimited') }}</span>
                     </div>
                     @if ($user->hasAccessSchedule())
-                        <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                            <span style="opacity:0.65;">{{ __('Access schedule') }}</span>
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Access schedule') }}</span>
                             <span>{{ $user->accessScheduleSummary() }}
                                 @unless ($user->isWithinAccessWindow())
-                                    <span style="opacity:0.65;">{{ __('(outside window now)') }}</span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('(outside window now)') }}</span>
                                 @endunless
                             </span>
                         </div>
                     @endif
                     @if ($user->max_connections)
-                        <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                            <span style="opacity:0.65;">{{ __('Max devices') }}</span>
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Max devices') }}</span>
                             <span>{{ $user->max_connections }}</span>
                         </div>
                     @endif
                     @if ($user->labels)
-                        <div style="display:flex;flex-direction:column;gap:0.125rem;">
-                            <span style="opacity:0.65;">{{ __('Labels') }}</span>
-                            <span style="display:flex;flex-wrap:wrap;gap:0.25rem;padding-top:0.25rem;">
+                        <div class="flex flex-col gap-0.5">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Labels') }}</span>
+                            <span class="flex flex-wrap gap-1 pt-1">
                                 @foreach ($user->labels as $label)
                                     <x-filament::badge color="gray">{{ $label }}</x-filament::badge>
                                 @endforeach
@@ -75,33 +78,39 @@
             </x-filament::section>
         </div>
 
-        <div style="flex:2 1 22rem;min-width:0;">
+        <div class="lg:col-span-2">
             <x-filament::section>
                 <x-slot name="heading">{{ __('Usage') }}</x-slot>
 
-                <div style="display:flex;gap:1rem;flex-wrap:wrap;">
-                    <div style="flex:1 1 10rem;display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Last handshake') }}</span>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Last handshake') }}</span>
                         <span>{{ $user->last_handshake_at?->diffForHumans() ?? __('never connected') }}</span>
                     </div>
-                    <div style="flex:1 1 10rem;display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Last seen from') }}</span>
-                        <span style="font-family:ui-monospace,monospace;">{{ $user->last_seen_ip ?? '--' }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Last seen from') }}</span>
+                        <span class="font-mono">{{ $user->last_seen_ip ?? '--' }}</span>
                     </div>
-                    <div style="flex:1 1 10rem;display:flex;flex-direction:column;gap:0.125rem;">
-                        <span style="opacity:0.65;">{{ __('Traffic this window') }}</span>
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Traffic this window') }}</span>
                         <span>{{ $this->formatBytes($user->dataUsedBytes()) }}</span>
                     </div>
                 </div>
 
                 @if ($ratio !== null)
-                    <div style="margin-top:1.25rem;">
-                        <div style="display:flex;justify-content:space-between;gap:0.5rem;">
-                            <span style="opacity:0.65;">{{ __('Allowance') }}</span>
+                    <div class="mt-5">
+                        <div class="flex justify-between gap-2">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('Allowance') }}</span>
                             <span>{{ __(':used of :total', ['used' => $this->formatBytes($user->dataUsedBytes()), 'total' => $this->formatBytes($user->data_limit_bytes)]) }}</span>
                         </div>
-                        <div style="margin-top:0.5rem;height:0.5rem;width:100%;overflow:hidden;border-radius:9999px;background:rgba(128,128,128,0.2);">
-                            <div style="height:100%;border-radius:9999px;width:{{ round($ratio * 100) }}%;background:{{ $ratio >= 0.9 ? 'rgb(var(--danger-500, 239 68 68))' : 'rgb(var(--primary-500, 59 130 246))' }};"></div>
+                        <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
+                            {{-- vf-gauge-fill sweeps the bar out from its left
+                                 edge on arrival; the width stays the source of
+                                 truth and the animation only scales it. --}}
+                            <div
+                                class="vf-gauge-fill h-full rounded-full {{ $ratio >= 0.9 ? 'bg-danger-500' : 'bg-primary-500' }}"
+                                style="width: {{ round($ratio * 100) }}%"
+                            ></div>
                         </div>
                     </div>
                 @endif
@@ -109,24 +118,24 @@
         </div>
     </div>
 
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start;">
-        <div style="flex:1 1 20rem;min-width:0;">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div>
             <x-filament::section>
                 <x-slot name="heading">{{ __('Recent sessions') }}</x-slot>
 
                 @php($sessions = $this->getRecentSessions())
 
                 @if ($sessions === [])
-                    <p style="opacity:0.65;">{{ __('No sessions recorded yet.') }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('No sessions recorded yet.') }}</p>
                 @else
-                    <div style="display:flex;flex-direction:column;">
+                    <div class="divide-y divide-gray-200 dark:divide-white/10">
                         @foreach ($sessions as $session)
-                            <div style="display:flex;justify-content:space-between;gap:1rem;padding:0.5rem 0;border-top:1px solid rgba(128,128,128,0.15);">
+                            <div class="flex items-center justify-between gap-4 py-2">
                                 <span>{{ $session['connected_at'] }}</span>
-                                <span style="opacity:0.65;">
+                                <span class="shrink-0 text-sm text-gray-500 dark:text-gray-400">
                                     {{ $session['ended'] }}
                                     @if ($session['peer_ip'])
-                                        &middot; <span style="font-family:ui-monospace,monospace;">{{ $session['peer_ip'] }}</span>
+                                        &middot; <span class="font-mono">{{ $session['peer_ip'] }}</span>
                                     @endif
                                 </span>
                             </div>
@@ -136,14 +145,14 @@
             </x-filament::section>
         </div>
 
-        <div style="flex:1 1 20rem;min-width:0;">
+        <div>
             <x-filament::section>
                 <x-slot name="heading">{{ __('Most visited (7 days)') }}</x-slot>
 
                 @php($domains = $this->getTopDomains())
 
                 @if ($domains === [])
-                    <p style="opacity:0.65;">
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
                         @if ($user->loggingEffective())
                             {{ __("Nothing recorded yet. Their device has to be using the config this panel generates for its lookups to pass through this service's resolver.") }}
                         @else
@@ -151,16 +160,16 @@
                         @endif
                     </p>
                 @else
-                    <div style="display:flex;flex-direction:column;">
+                    <div class="divide-y divide-gray-200 dark:divide-white/10">
                         @foreach ($domains as $domain)
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.5rem 0;border-top:1px solid rgba(128,128,128,0.15);">
-                                <span style="display:inline-flex;align-items:center;gap:0.5rem;min-width:0;">
-                                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ $domain['host'] }}</span>
+                            <div class="flex items-center justify-between gap-4 py-2">
+                                <span class="inline-flex min-w-0 items-center gap-2">
+                                    <span class="truncate">{{ $domain['host'] }}</span>
                                     <x-filament::badge :color="$domain['category']->getColor()" size="sm">
                                         {{ $domain['category']->getLabel() }}
                                     </x-filament::badge>
                                 </span>
-                                <span style="flex-shrink:0;opacity:0.65;">
+                                <span class="shrink-0 text-sm text-gray-500 dark:text-gray-400">
                                     {{ $domain['hits'] }} &middot; {{ $domain['last_seen'] }}
                                 </span>
                             </div>

@@ -20,9 +20,11 @@ class ConnectionLogsTable
                     ->placeholder(__('deleted user'))
                     ->searchable(),
                 TextColumn::make('connected_at')
+                    ->label(__('Connected at'))
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('disconnected_at')
+                    ->label(__('Disconnected at'))
                     ->dateTime()
                     ->placeholder(__('still connected'))
                     ->sortable(),
@@ -41,7 +43,10 @@ class ConnectionLogsTable
             ->emptyStateHeading(__('No connection logs'))
             ->emptyStateDescription(__('A session is recorded when polling finds a peer that handshook within the last few minutes, so a client has to be connected while the service is being polled -- sessions that ended before then are not backfilled.'))
             ->defaultSort('connected_at', 'desc')
-            ->poll('10s');
+            // Sessions are only ever written by the once-a-minute poller
+            // (routes/console.php), so anything faster than this refreshes the
+            // page six times over for the same rows.
+            ->poll('60s');
     }
 
     private static function formatBytes(int $bytes): string

@@ -59,6 +59,12 @@ class GettingStarted extends Widget
      * English source strings; the view translates them through __(). Icons are
      * shown while a step is pending -- a green check replaces them once done.
      *
+     * Every title, description and cta below is a translation key even though
+     * no __() appears here: the call site is __($step['title']) in the view. A
+     * literal-only extractor cannot see them, so they have to be kept in the
+     * lang files by hand or the first-run checklist silently reverts to
+     * English.
+     *
      * @return array<int, array{title: string, description: string, done: bool, url: string, cta: string, icon: string}>
      */
     public function getSteps(): array

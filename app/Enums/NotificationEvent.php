@@ -18,12 +18,12 @@ enum NotificationEvent: string
     public function label(): string
     {
         return match ($this) {
-            self::ServiceError => 'A service goes into error',
-            self::BackupFailed => 'A backup fails',
-            self::QuotaWarning => 'A user nears their data allowance',
-            self::UserSuspended => 'A user is auto-suspended',
-            self::DiskWarning => 'Disk space runs low',
-            self::NewLocation => 'A user connects from a new network',
+            self::ServiceError => __('A service goes into error'),
+            self::BackupFailed => __('A backup fails'),
+            self::QuotaWarning => __('A user nears their data allowance'),
+            self::UserSuspended => __('A user is auto-suspended'),
+            self::DiskWarning => __('Disk space runs low'),
+            self::NewLocation => __('A user connects from a new network'),
         };
     }
 

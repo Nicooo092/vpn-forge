@@ -33,7 +33,18 @@ class NotificationChannelResource extends Resource
         return __('Notifications');
     }
 
-    protected static ?string $modelLabel = 'notification channel';
+    // Methods rather than $modelLabel: a static property initializer cannot
+    // call __(), and the default plural would run Str::plural() over the
+    // translated singular, which is English-only pluralisation.
+    public static function getModelLabel(): string
+    {
+        return __('notification channel');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('notification channels');
+    }
 
     protected static ?int $navigationSort = 84;
 
@@ -123,6 +134,9 @@ class NotificationChannelResource extends Resource
                     ->state(fn (NotificationChannel $record) => $record->last_error === null)
                     ->tooltip(fn (NotificationChannel $record) => $record->last_error),
             ])
+            // This list's own icon, not Filament's generic error glyph: having
+            // no alert destination is a normal starting state.
+            ->emptyStateIcon('heroicon-o-bell-alert')
             ->emptyStateHeading(__('No channels yet'))
             ->emptyStateDescription(__('Add a Discord, Telegram, ntfy or email destination, then use "Send test" to check it.'))
             ->defaultSort('name');

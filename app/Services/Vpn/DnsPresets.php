@@ -16,6 +16,11 @@ class DnsPresets
     public const CUSTOM = 'custom';
 
     /**
+     * Labels and notes are stored as English source strings and translated at
+     * the point they are read (options() / noteFor()): a const cannot call
+     * __(), and the alternative -- translation keys in the array -- would make
+     * the file unreadable for the operator maintaining it.
+     *
      * @var array<string, array{label: string, servers: list<string>, note: string}>
      */
     private const PRESETS = [
@@ -69,10 +74,12 @@ class DnsPresets
         $options = [];
 
         foreach (self::PRESETS as $key => $preset) {
-            $options[$key] = $preset['label'].' ('.implode(', ', $preset['servers']).')';
+            // Only the label is translatable; the address list is data, so it
+            // is appended outside __() rather than baked into a key.
+            $options[$key] = __($preset['label']).' ('.implode(', ', $preset['servers']).')';
         }
 
-        $options[self::CUSTOM] = 'Custom -- enter the addresses yourself';
+        $options[self::CUSTOM] = __('Custom -- enter the addresses yourself');
 
         return $options;
     }
@@ -88,10 +95,12 @@ class DnsPresets
     public static function noteFor(?string $key): ?string
     {
         if ($key === self::CUSTOM) {
-            return 'Any resolver reachable from the server, including one on your own network. Both queries and answers still pass through this service\'s own resolver first, so traffic logging is unaffected.';
+            return __('Any resolver reachable from the server, including one on your own network. Both queries and answers still pass through this service\'s own resolver first, so traffic logging is unaffected.');
         }
 
-        return self::PRESETS[$key]['note'] ?? null;
+        $note = self::PRESETS[$key]['note'] ?? null;
+
+        return $note === null ? null : __($note);
     }
 
     /**

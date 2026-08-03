@@ -16,7 +16,9 @@ class ServiceStatsOverview extends StatsOverviewWidget
     // landing underneath it.
     protected static ?int $sort = 1;
 
-    protected ?string $pollingInterval = '30s';
+    // Handshakes and bandwidth totals are refreshed by the once-a-minute
+    // poller; polling faster only re-ran the queries against unchanged rows.
+    protected ?string $pollingInterval = '60s';
 
     protected function getStats(): array
     {

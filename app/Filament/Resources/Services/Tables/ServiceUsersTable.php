@@ -40,6 +40,7 @@ class ServiceUsersTable
             ->recordTitleAttribute('name')
             ->columns([
                 TextColumn::make('name')
+                    ->label(__('Name'))
                     ->searchable()
                     ->weight('bold')
                     ->url(fn (ServiceUser $record) => ServiceUserResource::getUrl('view', ['record' => $record])),
@@ -47,9 +48,17 @@ class ServiceUsersTable
                     ->label(__('Tunnel IP'))
                     ->fontFamily('mono'),
                 TextColumn::make('status')
+                    ->label(__('Status'))
                     ->badge()
-                    ->description(fn (ServiceUser $record) => $record->suspended_reason),
+                    // suspended_reason is written by the enforcement jobs and by
+                    // the suspend action below as a stable English key, so what
+                    // is stored never depends on the admin's locale. Translate
+                    // it here, at the only place it is read by a human.
+                    ->description(fn (ServiceUser $record) => $record->suspended_reason
+                        ? __($record->suspended_reason)
+                        : null),
                 TextColumn::make('labels')
+                    ->label(__('Labels'))
                     ->badge()
                     ->separator(',')
                     ->placeholder('--')
@@ -66,10 +75,29 @@ class ServiceUsersTable
                     ->state(fn (ServiceUser $record) => $record->data_limit_bytes === null
                         ? null
                         : __(':used of :limit', ['used' => self::formatBytes($record->dataUsedBytes()), 'limit' => self::formatBytes($record->data_limit_bytes)]))
-                    ->description(fn (ServiceUser $record) => $record->dataUsageRatio() === null
-                        ? null
-                        : __(':percent% used', ['percent' => round($record->dataUsageRatio() * 100)]))
-                    ->color(fn (ServiceUser $record) => $record->isOverDataLimit() ? 'danger' : null)
+                    // One dataUsageRatio() call per closure. This cell used to
+                    // ask for the usage figure three times a row -- twice in the
+                    // description and once more through isOverDataLimit() --
+                    // and every one of those aggregates over the bandwidth
+                    // samples. The ratio already answers both questions:
+                    // it is null exactly when there is no allowance, and it is
+                    // capped at 1, so 1.0 means the allowance is used up.
+                    ->description(function (ServiceUser $record): ?string {
+                        $ratio = $record->dataUsageRatio();
+
+                        return $ratio === null
+                            ? null
+                            : __(':percent% used', ['percent' => round($ratio * 100)]);
+                    })
+                    // isOverDataLimit() rather than testing the ratio: the two
+                    // disagree for a zero-byte allowance, where the ratio is
+                    // null (no allowance to be over) but the user genuinely is
+                    // over it. The form cannot produce a zero limit today, so
+                    // this is only a guard against one arriving another way --
+                    // and it is free, because dataUsedBytes() is memoised per
+                    // instance, so this asks the same cached figure the
+                    // description already used.
+                    ->color(fn (ServiceUser $record): ?string => $record->isOverDataLimit() ? 'danger' : null)
                     ->placeholder(__('unlimited'))
                     ->toggleable(),
                 IconColumn::make('logging_override')
@@ -433,7 +461,9 @@ class ServiceUsersTable
                 ]),
             ])
             ->filters([
-                SelectFilter::make('status')->options(ServiceUserStatus::class),
+                SelectFilter::make('status')
+                    ->label(__('Status'))
+                    ->options(ServiceUserStatus::class),
                 SelectFilter::make('labels')
                     ->label(__('Label'))
                     // labels is a json array, so match the quoted value inside
@@ -453,7 +483,11 @@ class ServiceUsersTable
             ->emptyStateIcon('heroicon-o-users')
             ->emptyStateHeading(__('No users yet'))
             ->emptyStateDescription(__('Add a user to generate their keys and a downloadable client config. Telemetry appears here once they connect.'))
-            ->poll('5s');
+            // The telemetry behind these rows is written by the poller once a
+            // minute (routes/console.php), so a five-second refresh re-ran the
+            // whole table -- allowance aggregates and all -- roughly twelve
+            // times per actual change.
+            ->poll('30s');
     }
 
     /**

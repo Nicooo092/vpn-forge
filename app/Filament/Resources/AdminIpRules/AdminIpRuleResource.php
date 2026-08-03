@@ -27,7 +27,18 @@ class AdminIpRuleResource extends Resource
         return __('Panel access');
     }
 
-    protected static ?string $modelLabel = 'allowed network';
+    // Methods rather than $modelLabel: a static property initializer cannot
+    // call __(), and the default plural would run Str::plural() over the
+    // translated singular, which is English-only pluralisation.
+    public static function getModelLabel(): string
+    {
+        return __('allowed network');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('allowed networks');
+    }
 
     protected static ?int $navigationSort = 88;
 
@@ -73,6 +84,10 @@ class AdminIpRuleResource extends Resource
                 TextColumn::make('label')->placeholder('--'),
                 TextColumn::make('created_at')->label(__('Added'))->since()->sortable(),
             ])
+            // An empty list is the normal, documented state here -- the panel
+            // is simply unrestricted -- so show this list's own icon rather
+            // than Filament's generic error glyph.
+            ->emptyStateIcon('heroicon-o-lock-closed')
             ->emptyStateHeading(__('No restriction'))
             ->emptyStateDescription(__('The panel is reachable from any network. Add an address to restrict it -- loopback always stays allowed, and you can clear the list over SSH if you get locked out.'))
             ->defaultSort('created_at');

@@ -4,11 +4,10 @@
         <x-slot name="description">{{ __("A few steps to a working tunnel. This disappears once you're set up.") }}</x-slot>
 
         {{-- Each step is a native compact section (icon + heading + description,
-             self-styled). The button rides in the header via afterHeader. The
-             only inline style is the vertical gap between them: this panel ships
-             no compiled Tailwind, so utility classes like space-y/gap resolve to
-             nothing -- an inline style is the reliable way to space them. --}}
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+             self-styled). The button rides in the header via afterHeader, and the
+             vertical gap between them is a plain utility class -- the panel now
+             compiles its own theme, so Tailwind utilities resolve here. --}}
+        <div class="flex flex-col gap-3">
             @foreach ($this->getSteps() as $i => $step)
                 <x-filament::section
                     compact

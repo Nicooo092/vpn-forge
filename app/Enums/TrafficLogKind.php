@@ -12,8 +12,8 @@ enum TrafficLogKind: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Dns => 'DNS query',
-            self::Http => 'HTTP request',
+            self::Dns => __('DNS query'),
+            self::Http => __('HTTP request'),
         };
     }
 }

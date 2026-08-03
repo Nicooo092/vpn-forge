@@ -45,11 +45,14 @@ class ConnectivityCheck
     private function serviceStatus(Service $service): array
     {
         return [
-            'label' => 'Service provisioned',
+            'label' => __('Service provisioned'),
             'ok' => $service->status === ServiceStatus::Active,
             'detail' => $service->status === ServiceStatus::Active
-                ? 'Provisioning completed.'
-                : 'Status is '.$service->status->getLabel().'. '.($service->last_error ?? 'Use Retry provisioning.'),
+                ? __('Provisioning completed.')
+                : __('Status is :status. :detail', [
+                    'status' => $service->status->getLabel(),
+                    'detail' => $service->last_error ?? __('Use Retry provisioning.'),
+                ]),
         ];
     }
 
@@ -62,11 +65,11 @@ class ConnectivityCheck
         $exists = $output !== null && trim($output) !== '';
 
         return [
-            'label' => "Interface {$service->interface_name} exists",
+            'label' => __('Interface :name exists', ['name' => $service->interface_name]),
             'ok' => $exists,
             'detail' => $exists
                 ? trim(preg_replace('/\s+/', ' ', $output))
-                : 'The kernel has no such interface. The tunnel was never brought up, or it did not survive a reboot.',
+                : __('The kernel has no such interface. The tunnel was never brought up, or it did not survive a reboot.'),
         ];
     }
 
@@ -83,11 +86,14 @@ class ConnectivityCheck
         $listening = str_contains($output, ":{$service->listen_port} ");
 
         return [
-            'label' => "Listening on {$service->listen_port}/{$service->transport->value}",
+            'label' => __('Listening on :port/:transport', [
+                'port' => $service->listen_port,
+                'transport' => $service->transport->value,
+            ]),
             'ok' => $listening,
             'detail' => $listening
-                ? 'A socket is bound to that port.'
-                : 'Nothing is bound to that port. The server process is not running, or it is using a different port than the panel records.',
+                ? __('A socket is bound to that port.')
+                : __('Nothing is bound to that port. The server process is not running, or it is using a different port than the panel records.'),
         ];
     }
 
@@ -99,11 +105,11 @@ class ConnectivityCheck
         $enabled = trim($this->capture(['sysctl', '-n', 'net.ipv4.ip_forward']) ?? '') === '1';
 
         return [
-            'label' => 'IP forwarding enabled',
+            'label' => __('IP forwarding enabled'),
             'ok' => $enabled,
             'detail' => $enabled
-                ? 'net.ipv4.ip_forward is 1.'
-                : 'net.ipv4.ip_forward is 0, so clients can reach the tunnel but nothing beyond it.',
+                ? __('net.ipv4.ip_forward is 1.')
+                : __('net.ipv4.ip_forward is 0, so clients can reach the tunnel but nothing beyond it.'),
         ];
     }
 
@@ -121,20 +127,26 @@ class ConnectivityCheck
         // failures is worse than no check.
         if ($output === null) {
             return [
-                'label' => 'NAT rule present',
+                'label' => __('NAT rule present'),
                 'ok' => null,
-                'detail' => 'Cannot read the NAT table from the web process, which holds no network privileges by design. Check by hand with: sudo iptables -t nat -S POSTROUTING',
+                'detail' => __('Cannot read the NAT table from the web process, which holds no network privileges by design. Check by hand with: sudo iptables -t nat -S POSTROUTING'),
             ];
         }
 
         $present = str_contains($output, $service->subnet_cidr) && str_contains($output, $egress);
 
         return [
-            'label' => 'NAT rule present',
+            'label' => __('NAT rule present'),
             'ok' => $present,
             'detail' => $present
-                ? "Traffic from {$service->subnet_cidr} is masqueraded out of {$egress}."
-                : "No MASQUERADE rule for {$service->subnet_cidr} out of {$egress}. Clients connect but reach nothing beyond the tunnel. Check the egress interface against `ip route show default`.",
+                ? __('Traffic from :subnet is masqueraded out of :egress.', [
+                    'subnet' => $service->subnet_cidr,
+                    'egress' => $egress,
+                ])
+                : __('No MASQUERADE rule for :subnet out of :egress. Clients connect but reach nothing beyond the tunnel. Check the egress interface against `ip route show default`.', [
+                    'subnet' => $service->subnet_cidr,
+                    'egress' => $egress,
+                ]),
         ];
     }
 
@@ -147,11 +159,11 @@ class ConnectivityCheck
         $active = trim($this->capture(['systemctl', 'is-active', $unit]) ?? '') === 'active';
 
         return [
-            'label' => 'DNS resolver running',
+            'label' => __('DNS resolver running'),
             'ok' => $active,
             'detail' => $active
-                ? "{$unit} is active."
-                : "{$unit} is not running. Clients pointed at this service's resolver will fail to resolve anything, and no traffic logs will be recorded.",
+                ? __(':unit is active.', ['unit' => $unit])
+                : __(':unit is not running. Clients pointed at this service\'s resolver will fail to resolve anything, and no traffic logs will be recorded.', ['unit' => $unit]),
         ];
     }
 
@@ -170,11 +182,11 @@ class ConnectivityCheck
         $ok = $resolved !== $host;
 
         return [
-            'label' => 'Endpoint hostname resolves',
+            'label' => __('Endpoint hostname resolves'),
             'ok' => $ok,
             'detail' => $ok
-                ? "{$host} resolves to {$resolved}."
-                : "{$host} does not resolve. Clients will not find the server at all.",
+                ? __(':host resolves to :address.', ['host' => $host, 'address' => $resolved])
+                : __(':host does not resolve. Clients will not find the server at all.', ['host' => $host]),
         ];
     }
 

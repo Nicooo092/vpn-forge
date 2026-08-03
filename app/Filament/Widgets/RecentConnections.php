@@ -46,6 +46,8 @@ class RecentConnections extends TableWidget
             ->emptyStateHeading(__('No sessions recorded'))
             ->emptyStateDescription(__('A session is logged when polling finds a peer that has handshaken recently.'))
             ->paginated(false)
-            ->poll('30s');
+            // Sessions are discovered by the once-a-minute poller, so nothing
+            // new can appear between two 30-second refreshes.
+            ->poll('60s');
     }
 }

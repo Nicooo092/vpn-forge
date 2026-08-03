@@ -25,8 +25,6 @@ class Exports extends Page
 
     protected static ?int $navigationSort = 85;
 
-    protected ?string $pollingInterval = '5s';
-
     public static function getNavigationIcon(): string|BackedEnum|Htmlable|null
     {
         return 'heroicon-o-document-arrow-down';
@@ -52,6 +50,11 @@ class Exports extends Page
         };
     }
 
+    /**
+     * Both actions write their file during the request, so the re-render that
+     * follows already lists it -- no polling needed, and the page property that
+     * used to claim otherwise did nothing on a Filament page anyway.
+     */
     protected function getHeaderActions(): array
     {
         return [

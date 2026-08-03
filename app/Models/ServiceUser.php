@@ -137,6 +137,13 @@ class ServiceUser extends Model
     }
 
     /**
+     * Memoised per instance: the users table asks for the total three or four
+     * times per row (the usage column, its description, its colour, the row
+     * actions), and each ask was a separate SUM over bandwidth_samples.
+     */
+    private ?int $dataUsedBytesCache = null;
+
+    /**
      * Summed from the recorded deltas rather than read off the interface: the
      * kernel counters restart from zero every time the tunnel is brought back
      * up, so anything measured from them alone forgets the traffic that came
@@ -144,9 +151,21 @@ class ServiceUser extends Model
      */
     public function dataUsedBytes(): int
     {
-        return (int) $this->bandwidthSamples()
+        return $this->dataUsedBytesCache ??= (int) $this->bandwidthSamples()
             ->when($this->quota_started_at, fn ($query) => $query->where('sampled_at', '>=', $this->quota_started_at))
             ->sum(DB::raw('bytes_in_delta + bytes_out_delta'));
+    }
+
+    /**
+     * Reloading from the database has to drop the memoised total as well,
+     * otherwise a refreshed instance would keep answering with the figure it
+     * computed before.
+     */
+    public function refresh()
+    {
+        $this->dataUsedBytesCache = null;
+
+        return parent::refresh();
     }
 
     public function isExpired(): bool
@@ -217,13 +236,21 @@ class ServiceUser extends Model
             return null;
         }
 
-        $names = [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'];
+        $names = [
+            1 => __('Mon'),
+            2 => __('Tue'),
+            3 => __('Wed'),
+            4 => __('Thu'),
+            5 => __('Fri'),
+            6 => __('Sat'),
+            7 => __('Sun'),
+        ];
 
         $parts = [];
 
         $parts[] = filled($this->access_days)
             ? collect($this->access_days)->map(fn ($d) => $names[(int) $d] ?? $d)->implode(', ')
-            : 'Every day';
+            : __('Every day');
 
         if ($this->access_start_minute !== null && $this->access_end_minute !== null) {
             $parts[] = $this->formatMinuteOfDay($this->access_start_minute).'-'.$this->formatMinuteOfDay($this->access_end_minute);

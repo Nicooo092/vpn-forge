@@ -15,7 +15,10 @@ class ManageConnectionLogs extends ManageRelatedRecords
 
     protected static string $relationship = 'connectionLogs';
 
-    protected static ?string $title = 'Connections';
+    public function getTitle(): string|Htmlable
+    {
+        return __('Connections');
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -29,6 +32,9 @@ class ManageConnectionLogs extends ManageRelatedRecords
 
     public function table(Table $table): Table
     {
-        return ConnectionLogsTable::configure($table);
+        // The User column reads serviceUser.name on every row; without this the
+        // page fires one query per session listed.
+        return ConnectionLogsTable::configure($table)
+            ->modifyQueryUsing(fn ($query) => $query->with('serviceUser'));
     }
 }

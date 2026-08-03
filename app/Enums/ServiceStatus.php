@@ -15,10 +15,10 @@ enum ServiceStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Provisioning => 'Provisioning',
-            self::Active => 'Active',
-            self::Error => 'Error',
-            self::Disabled => 'Disabled',
+            self::Provisioning => __('Provisioning'),
+            self::Active => __('Active'),
+            self::Error => __('Error'),
+            self::Disabled => __('Disabled'),
         };
     }
 

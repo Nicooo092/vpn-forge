@@ -8,15 +8,20 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 /**
  * The Server health read-out, built from Filament's own stat cards rather than
- * hand-rolled Tailwind. This panel ships no compiled custom theme (the
- * installer runs Composer only, never a JS build), so arbitrary utility classes
- * in a Blade view resolve to no CSS and the layout collapses -- the native
- * StatsOverviewWidget carries its own styles, so it renders correctly with no
- * build step. Load/memory/disk are colour-coded; the rest stay neutral so the
- * eye lands on the gauges that can actually go wrong.
+ * hand-rolled markup, so it inherits the panel's card, spacing and dark-mode
+ * treatment instead of approximating them. Load/memory/disk are colour-coded;
+ * the rest stay neutral so the eye lands on the gauges that can actually go
+ * wrong.
  */
 class ServerHealthStats extends StatsOverviewWidget
 {
+    // This belongs to the Server health page, which lists it explicitly as a
+    // header widget. Left discoverable it also landed on the Dashboard, where
+    // it repeated ServiceStatsOverview's counts and pushed the getting-started
+    // checklist below the fold. Filament registers the Livewire component
+    // before it consults this flag, so the page still renders it.
+    protected static bool $isDiscovered = false;
+
     // Eager, not the widget default of lazy: the snapshot is cheap (a read of
     // /proc plus a few row counts), so there is nothing to defer -- rendering
     // it inline puts the numbers in the first paint instead of flashing a

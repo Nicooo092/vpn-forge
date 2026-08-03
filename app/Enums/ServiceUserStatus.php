@@ -22,9 +22,9 @@ enum ServiceUserStatus: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Active => 'Active',
-            self::Suspended => 'Suspended',
-            self::Revoked => 'Revoked',
+            self::Active => __('Active'),
+            self::Suspended => __('Suspended'),
+            self::Revoked => __('Revoked'),
         };
     }
 

@@ -62,6 +62,18 @@ class AdminPanelProvider extends PanelProvider
             // framework's design system is actually reachable from them.
             // The build output is committed, since production has no Node.
             ->viteTheme('resources/css/filament/admin/theme.css')
+            // Navigate without a full page load: the browser keeps the parsed
+            // CSS/JS between pages instead of re-parsing ~70 kB of stylesheet on
+            // every click, the white flash between pages goes away, and the
+            // motion layer's arrival animations replay on each navigation
+            // instead of only on a cold load.
+            //
+            // Prefetching is deliberately left OFF. It would fire a real request
+            // for a page on hover, and some of the pages behind those links run
+            // the heaviest queries in the panel (the 24h DNS rollup) -- on a
+            // 2-core box that turns an idle cursor drifting across the sidebar
+            // into database load.
+            ->spa(hasPrefetching: false)
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([

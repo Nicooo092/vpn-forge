@@ -39,8 +39,8 @@ class ServiceForm
             ToggleButtons::make('form_mode')
                 ->label(__('Configuration mode'))
                 ->options([
-                    'simple' => 'Simple',
-                    'advanced' => 'Advanced',
+                    'simple' => __('Simple'),
+                    'advanced' => __('Advanced'),
                 ])
                 ->icons([
                     'simple' => 'heroicon-o-sparkles',
@@ -135,7 +135,11 @@ class ServiceForm
                             ->label(__('Network'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
-                                : $record->subnet_cidr.' on port '.$record->listen_port.'/'.$record->transport->value),
+                                : __(':subnet on port :port/:transport', [
+                                    'subnet' => $record->subnet_cidr,
+                                    'port' => $record->listen_port,
+                                    'transport' => $record->transport->value,
+                                ])),
 
                         // The address clients are pointed at for DNS, and so
                         // the one that has to be reachable for traffic logging
@@ -150,7 +154,7 @@ class ServiceForm
                             ->label(__('Users'))
                             ->content(fn (?Service $record) => $record === null
                                 ? '--'
-                                : $record->serviceUsers()->count().' configured'),
+                                : __(':count configured', ['count' => $record->serviceUsers()->count()])),
                     ]),
             ]),
 
@@ -169,7 +173,7 @@ class ServiceForm
             // are not: every key in them has a driver-side default identical to
             // the form default, so leaving them out keeps a WireGuard service
             // free of stray OpenVPN keys.
-            Tabs::make('Advanced settings')
+            Tabs::make(__('Advanced settings'))
                 ->dehydratedWhenHidden()
                 ->visible(fn (Get $get) => $get('form_mode') === 'advanced')
                 ->tabs([
@@ -188,7 +192,7 @@ class ServiceForm
                                 ->label(__('Interface name'))
                                 ->required()
                                 ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
-                                ->validationMessages(['regex' => 'Lower-case letters and digits only, starting with a letter, e.g. wg0.'])
+                                ->validationMessages(['regex' => __('Lower-case letters and digits only, starting with a letter, e.g. wg0.')])
                                 ->default(fn (Get $get) => self::suggestInterfaceName(self::protocolFrom($get('protocol'))))
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
@@ -198,7 +202,7 @@ class ServiceForm
                                 ->label(__('Subnet (CIDR)'))
                                 ->required()
                                 ->rule('regex:/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/')
-                                ->validationMessages(['regex' => 'An IPv4 CIDR, e.g. 10.8.0.0/24.'])
+                                ->validationMessages(['regex' => __('An IPv4 CIDR, e.g. 10.8.0.0/24.')])
                                 ->default(fn () => self::suggestSubnet())
                                 ->dehydratedWhenHidden()
                                 ->disabledOn('edit')
@@ -233,7 +237,7 @@ class ServiceForm
                                 ->label(__('Egress network interface'))
                                 ->required()
                                 ->rule('regex:/^[a-z][a-z0-9]{0,14}$/')
-                                ->validationMessages(['regex' => 'Lower-case letters and digits only, e.g. eth0 or ens5.'])
+                                ->validationMessages(['regex' => __('Lower-case letters and digits only, e.g. eth0 or ens5.')])
                                 ->default(fn () => self::detectEgressInterface())
                                 ->dehydratedWhenHidden()
                                 ->helperText(__('The server\'s internet-facing interface, used for the NAT/MASQUERADE rule.')),
@@ -289,7 +293,7 @@ class ServiceForm
                                 // restrict it to cipher-name characters -- no
                                 // newline can reach a command-executing directive.
                                 ->rule('regex:/^[A-Za-z0-9:_-]+$/')
-                                ->validationMessages(['regex' => 'Cipher names only (letters, digits, dashes), colon-separated.'])
+                                ->validationMessages(['regex' => __('Cipher names only (letters, digits, dashes), colon-separated.')])
                                 ->helperText(__('Colon-separated, in order of preference.')),
 
                             Select::make('config.auth_digest')
@@ -323,7 +327,7 @@ class ServiceForm
                                 ->default('10 60')
                                 ->dehydratedWhenHidden()
                                 ->rule('regex:/^\d+\s+\d+$/')
-                                ->validationMessages(['regex' => 'Two numbers separated by a space, for example 10 60.'])
+                                ->validationMessages(['regex' => __('Two numbers separated by a space, for example 10 60.')])
                                 ->helperText(__('Two numbers: ping interval and restart timeout, in seconds.')),
 
                             TextInput::make('config.max_clients')

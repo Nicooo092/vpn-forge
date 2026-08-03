@@ -16,9 +16,14 @@ class EditService extends EditRecord
 {
     protected static string $resource = ServiceResource::class;
 
-    protected static ?string $title = 'Settings';
-
     public static function getNavigationLabel(): string
+    {
+        return __('Settings');
+    }
+
+    // A static property initializer cannot call __(), so the title has to be
+    // built here or the heading stays English while the tab beside it does not.
+    public function getTitle(): string|Htmlable
     {
         return __('Settings');
     }

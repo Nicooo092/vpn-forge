@@ -45,9 +45,11 @@ class ServiceUserForm
             Select::make('logging_override')
                 ->label(__('Logging'))
                 ->options([
-                    '' => 'Inherit from service ('.($service->logging_enabled_default ? 'on' : 'off').')',
-                    '1' => 'Force on',
-                    '0' => 'Force off',
+                    '' => __('Inherit from service (:state)', [
+                        'state' => $service->logging_enabled_default ? __('on') : __('off'),
+                    ]),
+                    '1' => __('Force on'),
+                    '0' => __('Force off'),
                 ])
                 ->default('')
                 ->helperText(__('Off means nothing this user does is recorded -- no connections, no DNS lookups.')),
@@ -105,7 +107,15 @@ class ServiceUserForm
 
             CheckboxList::make('access_days')
                 ->label(__('Access days'))
-                ->options([1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'])
+                ->options([
+                    1 => __('Mon'),
+                    2 => __('Tue'),
+                    3 => __('Wed'),
+                    4 => __('Thu'),
+                    5 => __('Fri'),
+                    6 => __('Sat'),
+                    7 => __('Sun'),
+                ])
                 ->columns(7)
                 ->gridDirection('row')
                 ->helperText(__('Leave all unticked for every day. Ticked, access is allowed only on these days. Outside the window the user is suspended automatically and comes back on their own.')),

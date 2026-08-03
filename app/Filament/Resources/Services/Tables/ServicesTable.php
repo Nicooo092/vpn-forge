@@ -26,22 +26,33 @@ class ServicesTable
         return $table
             ->columns([
                 TextColumn::make('name')
+                    ->label(__('Name'))
                     ->searchable()
                     ->weight('bold'),
                 TextColumn::make('protocol')
+                    ->label(__('Protocol'))
                     ->badge(),
                 // A service that fails to provision stores why in last_error,
                 // which nothing used to surface -- the panel just showed a red
                 // "Error" badge and left you to go read the queue worker's
                 // journal over SSH to find out what happened.
                 TextColumn::make('status')
+                    ->label(__('Status'))
                     ->badge()
                     ->description(fn (Service $record) => $record->status === ServiceStatus::Error
                         ? Str::limit($record->last_error, 60)
                         : null)
                     ->tooltip(fn (Service $record) => $record->status === ServiceStatus::Error
                         ? $record->last_error
-                        : null),
+                        : null)
+                    // Provisioning is the one status that is actively in
+                    // progress rather than settled, so it is the one badge worth
+                    // animating: the slow breath says the worker is still on it
+                    // and the row will change on its own. Every other status is
+                    // a resting state and stays still.
+                    ->extraAttributes(fn (Service $record) => $record->status === ServiceStatus::Provisioning
+                        ? ['class' => 'vf-live']
+                        : []),
                 TextColumn::make('interface_name')
                     ->label(__('Interface'))
                     ->fontFamily('mono')
@@ -62,13 +73,18 @@ class ServicesTable
                     ->label(__('Logging (default)'))
                     ->boolean(),
                 TextColumn::make('created_at')
+                    ->label(__('Created at'))
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('protocol')->options(VpnProtocol::class),
-                SelectFilter::make('status')->options(ServiceStatus::class),
+                SelectFilter::make('protocol')
+                    ->label(__('Protocol'))
+                    ->options(VpnProtocol::class),
+                SelectFilter::make('status')
+                    ->label(__('Status'))
+                    ->options(ServiceStatus::class),
             ])
             ->recordActions([
                 ActionGroup::make([

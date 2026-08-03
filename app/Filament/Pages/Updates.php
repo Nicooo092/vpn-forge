@@ -30,6 +30,13 @@ class Updates extends Page
         return __('Updates');
     }
 
+    // Without this the heading falls back to the class basename, so the
+    // navigation entry reads translated while the page it opens does not.
+    public function getTitle(): string|Htmlable
+    {
+        return __('Updates');
+    }
+
     protected function getHeaderActions(): array
     {
         return [

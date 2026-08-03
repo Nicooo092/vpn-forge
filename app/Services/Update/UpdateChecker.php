@@ -71,7 +71,7 @@ class UpdateChecker
         $slug = $this->repoSlug();
 
         if ($current === null || $slug === null) {
-            return $this->result('unknown', null, message: 'This install is not a recognisable git checkout, so updates cannot be checked automatically.');
+            return $this->result('unknown', null, message: __('This install is not a recognisable git checkout, so updates cannot be checked automatically.'));
         }
 
         $cacheKey = "vpnforge:update:{$current}";
@@ -87,11 +87,11 @@ class UpdateChecker
                     'Accept' => 'application/vnd.github+json',
                 ])->timeout(8)->get("https://api.github.com/repos/{$slug}/compare/{$current}...{$this->branch()}");
             } catch (\Throwable $e) {
-                return $this->result('unknown', $this->currentCommit(), message: 'Could not reach GitHub to check for updates.');
+                return $this->result('unknown', $this->currentCommit(), message: __('Could not reach GitHub to check for updates.'));
             }
 
             if (! $response->successful()) {
-                return $this->result('unknown', $this->currentCommit(), message: 'GitHub did not answer the update check (HTTP '.$response->status().').');
+                return $this->result('unknown', $this->currentCommit(), message: __('GitHub did not answer the update check (HTTP :status).', ['status' => $response->status()]));
             }
 
             $body = $response->json();

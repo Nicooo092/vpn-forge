@@ -34,12 +34,14 @@ class TrafficLogsTable
                 // identifies the same peer the User column names, and the
                 // summary restates the resolver and answer columns.
                 TextColumn::make('kind')
+                    ->label(__('Kind'))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('serviceUser.name')
                     ->label(__('User'))
                     ->placeholder(__('unknown peer')),
                 TextColumn::make('occurred_at')
+                    ->label(__('Occurred at'))
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('source_ip')
@@ -68,6 +70,9 @@ class TrafficLogsTable
                     })
                     ->badge()
                     ->color(fn (?string $state) => $state === 'cache' ? 'gray' : 'info')
+                    // Translated on the way out only: the colour above and the
+                    // state itself keep the untranslated marker.
+                    ->formatStateUsing(fn (?string $state) => $state === 'cache' ? __('cache') : $state)
                     ->placeholder('--'),
                 TextColumn::make('answer')
                     ->label(__('Answer'))
@@ -96,7 +101,9 @@ class TrafficLogsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                SelectFilter::make('kind')->options(TrafficLogKind::class),
+                SelectFilter::make('kind')
+                    ->label(__('Kind'))
+                    ->options(TrafficLogKind::class),
             ])
             ->recordActions([
                 Action::make('view_detail')
@@ -158,7 +165,10 @@ class TrafficLogsTable
             // can see that. Name them.
             ->emptyStateDescription(fn () => self::whyEmpty($service))
             ->defaultSort('occurred_at', 'desc')
-            ->poll('15s');
+            // Rows land here in batches from the capture agent, and the empty
+            // state runs two extra queries on every refresh, so a fifteen-second
+            // poll bought nothing over thirty.
+            ->poll('30s');
     }
 
     private static function whyEmpty(Service $service): string

@@ -18,7 +18,10 @@ class ManageServiceUsers extends ManageRelatedRecords
 
     protected static string $relationship = 'serviceUsers';
 
-    protected static ?string $title = 'Users';
+    public function getTitle(): string|Htmlable
+    {
+        return __('Users');
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -40,6 +43,9 @@ class ManageServiceUsers extends ManageRelatedRecords
 
     public function table(Table $table): Table
     {
-        return ServiceUsersTable::configure($table);
+        // The QR action's visibility check reads $record->service->protocol on
+        // every row, which is one query per user without this.
+        return ServiceUsersTable::configure($table)
+            ->modifyQueryUsing(fn ($query) => $query->with('service'));
     }
 }

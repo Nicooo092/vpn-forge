@@ -27,3 +27,8 @@
 @source '../../../../app/Filament/**/*.php';
 @source '../../../../resources/views/**/*.blade.php';
 @source '../../../../vendor/filament/**/*.blade.php';
+
+/* The motion layer is imported last and deliberately left UNLAYERED: Tailwind
+   and Filament both emit their rules inside cascade layers, and unlayered CSS
+   outranks layered CSS, so these transitions win without a single !important. */
+@import './motion.css';

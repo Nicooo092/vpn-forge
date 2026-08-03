@@ -34,6 +34,13 @@ class ChangeHistory extends Page implements HasTable
         return __('Change history');
     }
 
+    // Without this the heading falls back to the class basename, so the
+    // navigation entry reads translated while the page it opens does not.
+    public function getTitle(): string|Htmlable
+    {
+        return __('Change history');
+    }
+
     public function table(Table $table): Table
     {
         return $table

@@ -38,10 +38,13 @@ class ServicesOverview extends TableWidget
             )
             ->columns([
                 TextColumn::make('name')
+                    ->label(__('Name'))
                     ->weight('bold'),
                 TextColumn::make('protocol')
+                    ->label(__('Protocol'))
                     ->badge(),
                 TextColumn::make('status')
+                    ->label(__('Status'))
                     ->badge()
                     ->description(fn (Service $record) => $record->status === ServiceStatus::Error
                         ? Str::limit($record->last_error, 50)
@@ -69,6 +72,8 @@ class ServicesOverview extends TableWidget
             ->emptyStateHeading(__('No services yet'))
             ->emptyStateDescription(__('Create one from the Services page to provision a WireGuard or OpenVPN server.'))
             ->paginated(false)
-            ->poll('30s');
+            // Status and handshake counts are written by the once-a-minute
+            // poller, so a 30-second refresh re-queried unchanged rows.
+            ->poll('60s');
     }
 }

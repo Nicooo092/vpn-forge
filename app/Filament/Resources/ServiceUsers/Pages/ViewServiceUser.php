@@ -23,8 +23,6 @@ class ViewServiceUser extends Page
 
     protected string $view = 'filament.pages.service-user';
 
-    protected ?string $pollingInterval = '15s';
-
     // Filament's own trait rather than a typed public $record of our own:
     // Livewire binds the route parameter straight onto a public property of
     // the same name, so declaring it as a ServiceUser makes hydration try to
@@ -44,7 +42,7 @@ class ViewServiceUser extends Page
     public function getBreadcrumbs(): array
     {
         return [
-            ServiceResource::getUrl('index') => 'Services',
+            ServiceResource::getUrl('index') => __('Services'),
             ServiceResource::getUrl('users', ['record' => $this->record->service]) => $this->record->service->name,
             $this->record->name,
         ];
@@ -84,7 +82,7 @@ class ViewServiceUser extends Page
             ->get()
             ->map(fn ($log) => [
                 'connected_at' => $log->connected_at?->toDayDateTimeString() ?? '--',
-                'ended' => $log->disconnected_at?->diffForHumans() ?? 'still connected',
+                'ended' => $log->disconnected_at?->diffForHumans() ?? __('still connected'),
                 'peer_ip' => $log->peer_ip,
             ])
             ->all();

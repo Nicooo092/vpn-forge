@@ -34,20 +34,20 @@ enum DomainCategory: string implements HasColor, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Advertising => 'Ads & tracking',
-            self::Social => 'Social',
-            self::Streaming => 'Streaming',
-            self::Shopping => 'Shopping',
-            self::News => 'News',
-            self::Gaming => 'Gaming',
-            self::Adult => 'Adult',
-            self::Ai => 'AI',
-            self::Cloud => 'Cloud & CDN',
-            self::Email => 'Email',
-            self::Developer => 'Developer',
-            self::Finance => 'Finance',
-            self::Messaging => 'Messaging',
-            self::Other => 'Other',
+            self::Advertising => __('Ads & tracking'),
+            self::Social => __('Social'),
+            self::Streaming => __('Streaming'),
+            self::Shopping => __('Shopping'),
+            self::News => __('News'),
+            self::Gaming => __('Gaming'),
+            self::Adult => __('Adult'),
+            self::Ai => __('AI'),
+            self::Cloud => __('Cloud & CDN'),
+            self::Email => __('Email'),
+            self::Developer => __('Developer'),
+            self::Finance => __('Finance'),
+            self::Messaging => __('Messaging'),
+            self::Other => __('Other'),
         };
     }
 

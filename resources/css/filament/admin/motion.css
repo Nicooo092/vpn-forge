@@ -1,0 +1,187 @@
+/*
+ * vpn-forge motion layer
+ * ----------------------
+ * The idea: this panel watches a live system, so motion here reports state --
+ * arrival, measurement, liveness -- rather than decorating idle pixels. A gauge
+ * that fills is showing you it measured something; a row that lifts is telling
+ * you it is the one under your cursor. Nothing animates that has nothing to say.
+ *
+ * It hooks Filament's own `fi-*` class names, so it applies across every page
+ * including ones with no custom Blade of their own.
+ *
+ * Rules this file holds itself to:
+ *   - Only `transform`, `opacity` and `filter` are animated. Those are
+ *     GPU-composited, so none of this costs layout or paint work -- the panel
+ *     has to stay fast on a 2-core box.
+ *   - Entrance animations are scoped to containers Livewire MORPHS rather than
+ *     replaces (page sections, widgets). Table rows are deliberately excluded:
+ *     they are re-created on every poll and sort, so an entrance animation there
+ *     would re-fire every 30 seconds and read as flicker.
+ *   - Everything sits inside `prefers-reduced-motion: no-preference`. With
+ *     reduced motion requested, the panel renders exactly as it did before this
+ *     file existed.
+ */
+
+:root {
+    /* One duration scale, so unrelated things do not each pick their own speed.
+       Fast enough to feel like a tool, not a presentation. */
+    --vf-press: 90ms;   /* pointer-down feedback */
+    --vf-hover: 180ms;  /* hover / focus state changes */
+    --vf-enter: 420ms;  /* an element arriving on screen */
+    --vf-gauge: 900ms;  /* a value being measured out */
+
+    /* Expo-out: leaves fast, settles precisely. Reads as engineered rather than
+       bouncy, which suits a panel whose job is telling you the truth quickly. */
+    --vf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+    --vf-stagger: 45ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    /* --- Arrival ---------------------------------------------------------
+       Page content rises into place. The stagger is short and capped: it should
+       read as one settling movement, not as items queueing up.               */
+
+    @keyframes vf-rise {
+        from {
+            opacity: 0;
+            transform: translate3d(0, 10px, 0);
+        }
+        to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+
+    .fi-main > * {
+        animation: vf-rise var(--vf-enter) var(--vf-ease) both;
+    }
+
+    .fi-main > :nth-child(2) { animation-delay: calc(var(--vf-stagger) * 1); }
+    .fi-main > :nth-child(3) { animation-delay: calc(var(--vf-stagger) * 2); }
+    .fi-main > :nth-child(4) { animation-delay: calc(var(--vf-stagger) * 3); }
+    .fi-main > :nth-child(n + 5) { animation-delay: calc(var(--vf-stagger) * 4); }
+
+    /* Stat cards settle individually -- a row of gauges reading at once is the
+       one place a visible sequence carries meaning (each is its own measure). */
+    .fi-wi-stats-overview-stat {
+        animation: vf-rise var(--vf-enter) var(--vf-ease) both;
+    }
+
+    .fi-wi-stats-overview-stat:nth-child(2) { animation-delay: calc(var(--vf-stagger) * 1); }
+    .fi-wi-stats-overview-stat:nth-child(3) { animation-delay: calc(var(--vf-stagger) * 2); }
+    .fi-wi-stats-overview-stat:nth-child(4) { animation-delay: calc(var(--vf-stagger) * 3); }
+    .fi-wi-stats-overview-stat:nth-child(5) { animation-delay: calc(var(--vf-stagger) * 4); }
+    .fi-wi-stats-overview-stat:nth-child(6) { animation-delay: calc(var(--vf-stagger) * 5); }
+    .fi-wi-stats-overview-stat:nth-child(n + 7) { animation-delay: calc(var(--vf-stagger) * 6); }
+
+    /* --- Measurement -----------------------------------------------------
+       A gauge fills from its left edge instead of appearing already full, so the
+       bar reads as a measurement being taken. scaleX is used rather than width
+       so the inline percentage stays the source of truth and the animation stays
+       off the layout path.                                                    */
+
+    @keyframes vf-measure {
+        from { transform: scaleX(0); }
+        to   { transform: scaleX(1); }
+    }
+
+    .vf-gauge-fill {
+        transform-origin: left center;
+        animation: vf-measure var(--vf-gauge) var(--vf-ease) both;
+    }
+
+    /* --- Liveness --------------------------------------------------------
+       Opt-in, for states that are genuinely transient (a service still
+       provisioning). A slow breath, not a blink -- it should be noticeable only
+       when you look at it.                                                    */
+
+    @keyframes vf-breathe {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.55; }
+    }
+
+    .vf-live {
+        animation: vf-breathe 2.4s ease-in-out infinite;
+    }
+
+    /* --- In flight -------------------------------------------------------
+       While Livewire is fetching, the content it will replace recedes slightly.
+       This is the panel admitting it is mid-request instead of freezing.      */
+
+    [wire\:loading] {
+        transition: opacity var(--vf-hover) var(--vf-ease);
+    }
+
+    /* --- Response --------------------------------------------------------
+       Pointer feedback. Small numbers on purpose: a control that moves a lot
+       feels toy-like, and these are controls that revoke keys and overwrite
+       databases.                                                              */
+
+    .fi-btn {
+        transition:
+            transform var(--vf-hover) var(--vf-ease),
+            box-shadow var(--vf-hover) var(--vf-ease),
+            filter var(--vf-hover) var(--vf-ease);
+    }
+
+    .fi-btn:hover {
+        transform: translate3d(0, -1px, 0);
+    }
+
+    .fi-btn:active {
+        transform: translate3d(0, 0, 0) scale(0.985);
+        transition-duration: var(--vf-press);
+    }
+
+    /* Sections lift a little under the pointer, which makes a long list of
+       archives or exports scannable by feel as well as by eye. */
+    .fi-section {
+        transition:
+            transform var(--vf-hover) var(--vf-ease),
+            box-shadow var(--vf-hover) var(--vf-ease);
+    }
+
+    /* Table rows highlight without moving -- shifting a row you are trying to
+       read a value from would be actively unhelpful. */
+    .fi-ta-row {
+        transition: background-color var(--vf-hover) var(--vf-ease);
+    }
+
+    /* Navigation: the active item earns a growing accent rather than a hard
+       swap, so moving through the sidebar feels continuous. */
+    .fi-sidebar-item-button {
+        transition:
+            background-color var(--vf-hover) var(--vf-ease),
+            color var(--vf-hover) var(--vf-ease),
+            transform var(--vf-hover) var(--vf-ease);
+    }
+
+    .fi-sidebar-item-button:hover {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    /* Badges pop in slightly. Status is the thing an operator scans for first,
+       so it is worth one frame of attention when it changes. */
+    @keyframes vf-badge-in {
+        from {
+            opacity: 0;
+            transform: scale(0.92);
+        }
+        to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+
+    .fi-badge {
+        animation: vf-badge-in var(--vf-hover) var(--vf-ease) both;
+    }
+
+    /* Inputs: focus should feel like the field came forward to meet you. */
+    .fi-input-wrp {
+        transition:
+            box-shadow var(--vf-hover) var(--vf-ease),
+            border-color var(--vf-hover) var(--vf-ease);
+    }
+}

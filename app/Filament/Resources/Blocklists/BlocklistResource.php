@@ -34,7 +34,18 @@ class BlocklistResource extends Resource
         return __('Blocklists');
     }
 
-    protected static ?string $modelLabel = 'blocklist';
+    // Methods rather than $modelLabel: a static property initializer cannot
+    // call __(), and the default plural would run Str::plural() over the
+    // translated singular, which is English-only pluralisation.
+    public static function getModelLabel(): string
+    {
+        return __('blocklist');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('blocklists');
+    }
 
     protected static ?int $navigationSort = 82;
 
@@ -103,6 +114,9 @@ class BlocklistResource extends Resource
                     ->state(fn (Blocklist $record) => $record->last_error === null)
                     ->tooltip(fn (Blocklist $record) => $record->last_error),
             ])
+            // This list's own icon, not Filament's generic error glyph: a fresh
+            // install has no subscriptions and that is not a failure.
+            ->emptyStateIcon('heroicon-o-shield-check')
             ->emptyStateHeading(__('No blocklists yet'))
             ->emptyStateDescription(__('Add a subscription — start from a known list — and it is fetched, merged and served by every service that has blocklists enabled.'))
             ->defaultSort('name');

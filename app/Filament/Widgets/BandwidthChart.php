@@ -5,14 +5,17 @@ namespace App\Filament\Widgets;
 use App\Models\BandwidthSample;
 use Carbon\CarbonImmutable;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class BandwidthChart extends ChartWidget
 {
-    protected ?string $heading = 'Bandwidth (all services)';
-
     protected ?string $maxHeight = '260px';
 
-    protected ?string $pollingInterval = '30s';
+    // The scheduler writes one sample a minute, so anything faster than this
+    // only ever redrew the same series.
+    protected ?string $pollingInterval = '60s';
 
     // The dashboard grid is two columns wide, and a widget occupies one of
     // them by default -- which left the chart squeezed into the left half with
@@ -28,12 +31,19 @@ class BandwidthChart extends ChartWidget
      */
     private ?int $peakBytes = null;
 
+    public function getHeading(): string|Htmlable|null
+    {
+        return __('Bandwidth (all services)');
+    }
+
     protected function getFilters(): ?array
     {
+        // Keys are the stored filter values and stay English; only what the
+        // select shows is translated.
         return [
-            '24h' => 'Last 24 hours',
-            '7d' => 'Last 7 days',
-            '30d' => 'Last 30 days',
+            '24h' => __('Last 24 hours'),
+            '7d' => __('Last 7 days'),
+            '30d' => __('Last 30 days'),
         ];
     }
 
@@ -53,22 +63,15 @@ class BandwidthChart extends ChartWidget
             $labels[] = $start->addSeconds($i * $stepSeconds)->format($labelFormat);
         }
 
-        // service_user_id is null on the service-level total rows -- this is
-        // the aggregate-across-everything view for the global dashboard.
-        $samples = BandwidthSample::whereNull('service_user_id')
-            ->where('sampled_at', '>=', $start)
-            ->orderBy('sampled_at')
-            ->get();
-
-        foreach ($samples as $sample) {
-            $index = (int) floor($start->diffInSeconds($sample->sampled_at) / $stepSeconds);
+        foreach ($this->bucketTotals($start, $stepSeconds) as $row) {
+            $index = (int) $row->bucket;
 
             if ($index < 0 || $index >= $bucketCount) {
                 continue;
             }
 
-            $in[$index] += $sample->bytes_in_delta;
-            $out[$index] += $sample->bytes_out_delta;
+            $in[$index] = (int) $row->bytes_in;
+            $out[$index] = (int) $row->bytes_out;
         }
 
         $this->peakBytes = max([0, ...$in, ...$out]);
@@ -77,7 +80,7 @@ class BandwidthChart extends ChartWidget
         return [
             'datasets' => [
                 [
-                    'label' => "Download ({$unit})",
+                    'label' => __('Download (:unit)', ['unit' => $unit]),
                     'data' => array_map(fn (int $bytes) => round($bytes / $divisor, 2), $in),
                     'borderColor' => '#f59e0b',
                     'backgroundColor' => 'rgba(245, 158, 11, 0.15)',
@@ -88,7 +91,7 @@ class BandwidthChart extends ChartWidget
                     'borderWidth' => 2,
                 ],
                 [
-                    'label' => "Upload ({$unit})",
+                    'label' => __('Upload (:unit)', ['unit' => $unit]),
                     'data' => array_map(fn (int $bytes) => round($bytes / $divisor, 2), $out),
                     'borderColor' => '#3b82f6',
                     'backgroundColor' => 'rgba(59, 130, 246, 0.15)',
@@ -111,7 +114,7 @@ class BandwidthChart extends ChartWidget
             return null;
         }
 
-        return 'No traffic recorded in this window. Samples are only written while a client is connected and the service is being polled.';
+        return __('No traffic recorded in this window. Samples are only written while a client is connected and the service is being polled.');
     }
 
     protected function getOptions(): array
@@ -143,6 +146,51 @@ class BandwidthChart extends ChartWidget
     protected function getType(): string
     {
         return 'line';
+    }
+
+    /**
+     * One row per bucket that actually has traffic -- at most 30 -- summed by
+     * the database. This used to hydrate every sample in the window (a month
+     * is ~43,000 rows) purely to add them up into 30 numbers in PHP.
+     *
+     * service_user_id is null on the service-level total rows -- this is
+     * the aggregate-across-everything view for the global dashboard.
+     *
+     * @return Collection<int, object>
+     */
+    private function bucketTotals(CarbonImmutable $start, int $stepSeconds): Collection
+    {
+        $bucket = $this->bucketExpression($stepSeconds);
+
+        return BandwidthSample::query()
+            ->whereNull('service_user_id')
+            ->where('sampled_at', '>=', $start)
+            ->selectRaw(
+                "{$bucket} as bucket, SUM(bytes_in_delta) as bytes_in, SUM(bytes_out_delta) as bytes_out",
+                [$start],
+            )
+            ->groupByRaw($bucket, [$start])
+            ->toBase()
+            ->get();
+    }
+
+    /**
+     * The bucket index, computed by the database instead of in PHP:
+     * floor((sampled_at - start) / step), exactly what the row-by-row loop
+     * used to work out, so the series lands in the same places.
+     *
+     * MariaDB and SQLite (which the test suite runs on) share no date
+     * function here, so the expression is per driver. Both forms subtract two
+     * naive datetimes without a session time zone anywhere in the middle --
+     * UNIX_TIMESTAMP() would have applied the MySQL session zone to one side
+     * only and shifted the whole chart on a non-UTC server.
+     */
+    private function bucketExpression(int $stepSeconds): string
+    {
+        return match (DB::connection()->getDriverName()) {
+            'sqlite' => "CAST((CAST(strftime('%s', sampled_at) AS INTEGER) - CAST(strftime('%s', ?) AS INTEGER)) / {$stepSeconds} AS INTEGER)",
+            default => "FLOOR(TIMESTAMPDIFF(SECOND, ?, sampled_at) / {$stepSeconds})",
+        };
     }
 
     /**

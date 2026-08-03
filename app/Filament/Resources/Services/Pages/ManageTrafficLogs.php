@@ -16,7 +16,10 @@ class ManageTrafficLogs extends ManageRelatedRecords
 
     protected static string $relationship = 'trafficLogs';
 
-    protected static ?string $title = 'Traffic logs';
+    public function getTitle(): string|Htmlable
+    {
+        return __('Traffic logs');
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -33,6 +36,9 @@ class ManageTrafficLogs extends ManageRelatedRecords
         /** @var Service $service */
         $service = $this->getRecord();
 
-        return TrafficLogsTable::configure($table, $service);
+        // The User column reads serviceUser.name on every row; without this the
+        // page fires one query per log line rendered.
+        return TrafficLogsTable::configure($table, $service)
+            ->modifyQueryUsing(fn ($query) => $query->with('serviceUser'));
     }
 }

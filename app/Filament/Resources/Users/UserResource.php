@@ -28,7 +28,18 @@ class UserResource extends Resource
         return __('Admin accounts');
     }
 
-    protected static ?string $modelLabel = 'admin account';
+    // Methods rather than $modelLabel: a static property initializer cannot
+    // call __(), and the default plural would run Str::plural() over the
+    // translated singular, which is English-only pluralisation.
+    public static function getModelLabel(): string
+    {
+        return __('admin account');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return __('admin accounts');
+    }
 
     protected static ?int $navigationSort = 80;
 
@@ -85,7 +96,11 @@ class UserResource extends Resource
                     ->since()
                     ->sortable(),
             ])
+            // The list's own icon, not Filament's generic error glyph: an
+            // empty list here is a state, not a failure.
+            ->emptyStateIcon('heroicon-o-user-circle')
             ->emptyStateHeading(__('No accounts'))
+            ->emptyStateDescription(__('Everyone listed here signs in to this panel with full access, including the traffic logs.'))
             ->defaultSort('name');
     }
 

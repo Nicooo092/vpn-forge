@@ -51,6 +51,8 @@ class TopDomains extends TableWidget
             ->emptyStateHeading(__('No DNS activity yet'))
             ->emptyStateDescription(__('Queries appear once a user with logging enabled connects, provided clients are pointed at this service\'s own resolver.'))
             ->paginated(false)
-            ->poll('30s');
+            // A 24h GROUP BY over the DNS log is the heaviest query on the
+            // dashboard, and the ranking barely moves minute to minute.
+            ->poll('300s');
     }
 }

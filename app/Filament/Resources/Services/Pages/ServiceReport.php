@@ -25,8 +25,6 @@ class ServiceReport extends Page
 
     protected string $view = 'filament.pages.service-report';
 
-    protected static ?string $title = 'Report';
-
     #[Url]
     public string $period = '7d';
 
@@ -97,6 +95,11 @@ class ServiceReport extends Page
 
         return [
             'hasData' => $data->hasData(),
+            // The denominators behind every percentage below. The PDF has shown
+            // them since it was written; on screen they were computed and then
+            // dropped, leaving percentages of an unstated total.
+            'totalLookups' => $data->totalLookups(),
+            'distinctDomains' => $data->distinctDomains(),
             'breakdown' => $data->categoryBreakdown(),
             'topDomains' => $data->topDomains(),
             'topUsers' => $data->topUsers(),
