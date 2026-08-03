@@ -390,6 +390,25 @@ function measurablePaths(svg, limit) {
 }
 
 /** On screen, in a tab someone is actually looking at. */
+/**
+ * Below this, a stroke draw does not read as drawing -- it reads as a broken
+ * icon.
+ *
+ * A section-header heroicon is 20-24px. At that size the dash walk covers a few
+ * pixels per frame, and because only the first few sub-paths are measured, an
+ * icon with more of them shows some strokes missing while the rest are already
+ * solid. On the getting-started checklist that rendered as a half-drawn glyph
+ * sitting next to three complete ones. Empty-state icons are several times
+ * larger and are where the effect actually belongs.
+ */
+const MIN_DRAW_SIZE = 40
+
+function isBigEnoughToDraw(svg) {
+    const rect = svg.getBoundingClientRect()
+
+    return Math.min(rect.width, rect.height) >= MIN_DRAW_SIZE
+}
+
 function isWatchable(element) {
     if (document.visibilityState === 'hidden' || !element.isConnected) {
         return false
@@ -1077,7 +1096,7 @@ function drawOn({ gsap, ScrollTrigger, MOTION, scope, owned, tier }) {
     }
 
     const icons = Array.from(document.querySelectorAll(DRAW_TARGETS)).filter(
-        (svg) => !svg.hasAttribute(DRAWN) && !svg.closest(VOLATILE),
+        (svg) => !svg.hasAttribute(DRAWN) && !svg.closest(VOLATILE) && isBigEnoughToDraw(svg),
     )
 
     if (!icons.length) {
@@ -1111,9 +1130,19 @@ function drawOn({ gsap, ScrollTrigger, MOTION, scope, owned, tier }) {
 
 /** Walk an outline icon's strokes into existence. */
 function drawStroke({ gsap, MOTION, scope, owned }, svg, delay, duration) {
+    const drawable = svg.querySelectorAll('path').length
     const measured = measurablePaths(svg, 4)
 
     if (!measured.length) {
+        return
+    }
+
+    // All or nothing. Only the measured paths get hidden behind a dash gap, so
+    // an icon with more sub-paths than the cap would show the unmeasured ones
+    // solid while the rest walked in -- which does not read as drawing, it reads
+    // as an icon missing pieces. If the whole mark cannot be drawn, leave it
+    // alone.
+    if (drawable > measured.length) {
         return
     }
 
