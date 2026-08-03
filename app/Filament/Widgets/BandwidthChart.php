@@ -169,7 +169,14 @@ class BandwidthChart extends ChartWidget
                 "{$bucket} as bucket, SUM(bytes_in_delta) as bytes_in, SUM(bytes_out_delta) as bytes_out",
                 [$start],
             )
-            ->groupByRaw($bucket, [$start])
+            // Group by the output alias, not by repeating the expression.
+            // Repeating it puts a second placeholder in the statement, and
+            // MariaDB running ONLY_FULL_GROUP_BY (the default) then treats the
+            // two occurrences as different expressions and rejects the query
+            // with "'sampled_at' isn't in GROUP BY". Grouping by the alias is
+            // accepted by MariaDB, MySQL and SQLite alike, and it drops the
+            // duplicate binding.
+            ->groupBy('bucket')
             ->toBase()
             ->get();
     }
