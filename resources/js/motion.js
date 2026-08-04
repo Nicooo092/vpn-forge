@@ -163,6 +163,74 @@ function teardown() {
     }
 }
 
+/**
+ * Elements the motion system is allowed to rescue.
+ *
+ * Deliberately a list of things that carry CONTENT rather than a blanket sweep:
+ * loading placeholders and our own decorative layers are legitimately faded, and
+ * forcing those to full opacity would be its own bug.
+ */
+const RESCUE = [
+    '.fi-wi-stats-overview-stat',
+    '.fi-section',
+    '.fi-ta-ctn',
+    '.fi-wi',
+    '.fi-header',
+    '.fi-main > *',
+].join(', ')
+
+/**
+ * Force anything on screen but still invisible back to a readable state.
+ *
+ * Only inline styles are touched, and only on elements that are actually in the
+ * viewport -- an element parked below the fold is legitimately waiting for its
+ * scroll reveal, and clearing it would defeat the effect for no benefit.
+ */
+function rescueHiddenContent() {
+    const height = window.innerHeight || document.documentElement.clientHeight || 0
+
+    document.querySelectorAll(RESCUE).forEach((element) => {
+        // Ours, and decorative: never content.
+        if (element.hasAttribute('data-vf-layer') || element.closest('[data-vf-layer]')) {
+            return
+        }
+
+        const style = element.getAttribute('style')
+
+        if (!style || !style.includes('opacity')) {
+            return
+        }
+
+        const rect = element.getBoundingClientRect()
+
+        if (rect.bottom <= 0 || rect.top >= height || (!rect.width && !rect.height)) {
+            return
+        }
+
+        if (Number(getComputedStyle(element).opacity) >= 0.99) {
+            return
+        }
+
+        gsap.set(element, {
+            clearProps: 'opacity,transform,translate,scale,rotate,clipPath,filter,visibility,willChange',
+        })
+    })
+}
+
+function sweepAt(delayMs, run) {
+    window.setTimeout(() => {
+        if (run !== generation) {
+            return
+        }
+
+        try {
+            rescueHiddenContent()
+        } catch (error) {
+            console.warn('[vpn-forge motion] rescue sweep failed', error)
+        }
+    }, delayMs)
+}
+
 function boot() {
     teardown()
 
@@ -212,6 +280,20 @@ function boot() {
             ScrollTrigger.refresh()
         }
     })
+
+    // The system-wide safety net. Individual modules carry their own failsafes,
+    // but each only knows about its own targets -- so a start state applied by
+    // one module and never advanced (a timeline that does not tick, an
+    // interrupted boot, a page whose structure the module did not expect) leaves
+    // content invisible with nothing left to notice. The Server health page
+    // rendered completely blank that way: its stat cards sat at the entrance
+    // sequence's opening frame forever.
+    //
+    // Two sweeps on the wall clock, using setTimeout rather than gsap's own
+    // scheduler on purpose -- if the ticker is the thing that stopped, a
+    // ticker-driven rescue would never arrive either.
+    sweepAt(1800, run)
+    sweepAt(4000, run)
 }
 
 /**
