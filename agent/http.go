@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -17,6 +19,38 @@ import (
 )
 
 const httpPort = layers.TCPPort(80)
+
+// Request headers that carry credentials or session material. Their values are
+// replaced with a length-only placeholder before storage: a monitoring log is
+// meant to show which sites a client visited, not to become a store of their
+// bearer tokens and session cookies -- which, captured verbatim from plaintext
+// HTTP, would let anyone with panel (or backup) access replay them. The name is
+// kept so it is still visible that the header was present.
+var redactedHeaders = map[string]bool{
+	"authorization":       true,
+	"proxy-authorization": true,
+	"cookie":              true,
+	"set-cookie":          true,
+}
+
+// sanitizeHeaders flattens an http.Header into a name->value map, replacing the
+// value of any sensitive header with a "[redacted N bytes]" placeholder. Kept
+// pure (no capture/DB dependency) so it can be asserted on directly.
+func sanitizeHeaders(header http.Header) map[string]string {
+	out := make(map[string]string, len(header))
+
+	for name := range header {
+		value := header.Get(name)
+
+		if redactedHeaders[strings.ToLower(name)] {
+			value = fmt.Sprintf("[redacted %d bytes]", len(value))
+		}
+
+		out[name] = value
+	}
+
+	return out
+}
 
 // CaptureHTTP passively sniffs a service's tunnel interface for plaintext
 // (port 80) HTTP traffic and reconstructs full requests. It never touches
@@ -145,10 +179,7 @@ func (f *httpStreamFactory) parseRequests(stream io.Reader, sourceIP string) {
 			continue
 		}
 
-		headers := map[string]string{}
-		for name := range req.Header {
-			headers[name] = req.Header.Get(name)
-		}
+		headers := sanitizeHeaders(req.Header)
 
 		f.store.Enqueue(TrafficLogRow{
 			ServiceID:     f.serviceID,
