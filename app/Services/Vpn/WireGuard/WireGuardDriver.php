@@ -254,9 +254,14 @@ class WireGuardDriver implements VpnProtocolDriver
             // stop, since the interface was brought up directly rather
             // than via `systemctl start wg-quick@...` -- this just prevents
             // it from being brought back up on the next boot.
-            Process::run(['systemctl', 'disable', "wg-quick@{$service->interface_name}"])->run();
+            //
+            // Best effort, and NOT chained with ->run(): Process::run() has
+            // already executed the command; ->run() on its ProcessResult is a
+            // fatal "undefined method" that would abort the teardown and leave
+            // the service undeletable.
+            Process::run(['systemctl', 'disable', "wg-quick@{$service->interface_name}"]);
             $this->applyNatRules($service, add: false);
-            Process::run(['ip', 'link', 'delete', $service->interface_name])->run();
+            Process::run(['ip', 'link', 'delete', $service->interface_name]);
             File::delete($confPath);
         }
     }

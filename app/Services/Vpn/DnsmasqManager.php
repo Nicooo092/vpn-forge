@@ -55,7 +55,10 @@ class DnsmasqManager
     public function deprovision(Service $service): void
     {
         $unit = "vpnforge-dnsmasq@{$service->interface_name}";
-        Process::run(['systemctl', 'disable', '--now', $unit])->run();
+        // Best effort: the unit may already be stopped. Process::run() has
+        // already executed the command -- calling ->run() on its result would
+        // be a fatal "undefined method" and abort the whole teardown.
+        Process::run(['systemctl', 'disable', '--now', $unit]);
         File::delete($this->configPath($service));
     }
 

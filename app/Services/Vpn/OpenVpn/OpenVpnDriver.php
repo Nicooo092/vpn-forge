@@ -103,6 +103,12 @@ class OpenVpnDriver implements VpnProtocolDriver
         $user->issued_at = now();
         $user->save();
 
+        // Write this user's client-config-dir entry now, so their very first
+        // connection is pinned to the tunnel IP the panel recorded rather than
+        // whatever OpenVPN's dynamic pool hands out (see clientConfigDirLines).
+        // ccd files are re-read per connection, so this needs no server reload.
+        $this->syncClientConfigDir($service);
+
         // No server reload needed: OpenVPN validates client certs against
         // ca.crt + the CRL dynamically, per connection.
     }
@@ -340,7 +346,19 @@ class OpenVpnDriver implements VpnProtocolDriver
     {
         $dir = $this->serviceDir($service);
 
-        Process::run(['systemctl', 'disable', '--now', "openvpn-server@{$this->unitName($service)}"])->run();
+        Process::run(['systemctl', 'disable', '--now', "openvpn-server@{$this->unitName($service)}"]);
+
+        // Drop the NAT rule this service's config added (writeServerConfig).
+        // OpenVPN has no PostDown hook, so without removing it here the
+        // MASQUERADE rule for a deleted service's subnet is left behind on
+        // every removal. Best effort: -C first so a missing rule is a no-op
+        // rather than an error.
+        $egressInterface = $service->config['egress_interface'] ?? 'eth0';
+        $rule = ['-s', $service->subnet_cidr, '-o', $egressInterface, '-j', 'MASQUERADE'];
+
+        if (Process::run(['iptables', '-t', 'nat', '-C', 'POSTROUTING', ...$rule])->successful()) {
+            Process::run(['iptables', '-t', 'nat', '-D', 'POSTROUTING', ...$rule]);
+        }
 
         if (File::isDirectory($dir)) {
             File::deleteDirectory($dir);
@@ -618,7 +636,7 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         foreach ($service->serviceUsers()->whereNotNull('openvpn_common_name')->get() as $user) {
             $path = "{$ccdDir}/{$user->openvpn_common_name}";
-            $lines = $this->clientConfigDirLines($user);
+            $lines = $this->clientConfigDirLines($service, $user);
 
             if ($lines === []) {
                 File::delete($path);
@@ -635,28 +653,50 @@ class OpenVpnDriver implements VpnProtocolDriver
     }
 
     /**
-     * The per-user client-config-dir directives, if any. A suspended user is
-     * disabled outright -- nothing else about them matters while they are off.
-     * Otherwise a DNS override is pushed to just this client.
+     * The per-user client-config-dir directives. A suspended user is disabled
+     * outright -- nothing else about them matters while they are off. An active
+     * user is pinned to their recorded tunnel IP, and optionally handed a DNS
+     * override.
      *
-     * Validated to bare IPs at the sink: the line lands in a config OpenVPN
-     * reads as root. Unlike WireGuard, OpenVPN has no per-client way to
-     * un-push the service's own resolver, so this is pushed in addition to it
-     * rather than replacing it -- the user's device receives both, and their
-     * lookups still reach this panel's resolver and stay logged.
+     * Every value is validated to a bare IP at the sink: the lines land in a
+     * config OpenVPN reads as root.
+     *
+     * Public and pure (it neither writes nor restarts anything) so the exact
+     * directives can be asserted on in a test without root, the same way
+     * buildServerConfig() is.
      *
      * @return list<string>
      */
-    private function clientConfigDirLines(ServiceUser $user): array
+    public function clientConfigDirLines(Service $service, ServiceUser $user): array
     {
         if ($user->status === ServiceUserStatus::Suspended) {
             return ['disable'];
         }
 
-        return array_map(
-            fn (string $ip) => "push \"dhcp-option DNS {$ip}\"",
-            NetworkInput::filterUpstreams($user->dns_override ?? []),
-        );
+        $lines = [];
+
+        // Pin the client to the tunnel IP the panel recorded. Without this,
+        // OpenVPN assigns addresses from its own dynamic pool in connection
+        // order, so service_users.tunnel_ip never matches the address a client
+        // actually gets -- silently breaking every tunnel-IP-keyed mechanism:
+        // status polling and bandwidth/quota accounting (PollAllServiceStatuses
+        // keys users by tunnel_ip), per-user tc shaping (TrafficShaper matches
+        // on it), and the capture agent's DNS/HTTP attribution. `topology
+        // subnet` expects an address followed by the subnet mask here.
+        if ($user->tunnel_ip !== null && $user->tunnel_ip !== '') {
+            $ip = NetworkInput::assertTunnelIp($user->tunnel_ip);
+            $lines[] = "ifconfig-push {$ip} {$this->netmask($service)}";
+        }
+
+        // Unlike WireGuard, OpenVPN has no per-client way to un-push the
+        // service's own resolver, so a DNS override is pushed in addition to it
+        // rather than replacing it -- the device receives both, and the user's
+        // lookups still reach this panel's resolver and stay logged.
+        foreach (NetworkInput::filterUpstreams($user->dns_override ?? []) as $ip) {
+            $lines[] = "push \"dhcp-option DNS {$ip}\"";
+        }
+
+        return $lines;
     }
 
     private function disconnectSuspended(Service $service): void
