@@ -8,6 +8,7 @@ use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Notifications\Notifier;
+use App\Services\Vpn\TrafficShaper;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -83,6 +84,11 @@ class EnforceUserLimits implements ShouldQueue
         // WireGuard this rewrites the peer list, for OpenVPN it writes the
         // client-config-dir entries and cuts the live sessions.
         $service->driver()->applyServiceConfig($service);
+
+        // Keep tc shaping in step with the current active set -- the driver's
+        // applyServiceConfig does not, and a suspension leaves a stale per-user
+        // class behind otherwise.
+        app(TrafficShaper::class)->apply($service);
     }
 
     /**

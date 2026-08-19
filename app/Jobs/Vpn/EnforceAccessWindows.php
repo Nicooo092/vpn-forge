@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use App\Services\Vpn\TrafficShaper;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -97,6 +98,15 @@ class EnforceAccessWindows implements ShouldQueue
         // (WireGuard) or the client-config-dir + live sessions (OpenVPN).
         if ($changed) {
             $service->driver()->applyServiceConfig($service);
+
+            // The driver's applyServiceConfig does NOT touch tc shaping (only
+            // the ApplyServiceConfig job does). A resumed user therefore came
+            // back uncapped -- and TrafficShaper::plan() only builds classes
+            // for Active users, so a limited user suspended when the shaper was
+            // last rebuilt (e.g. at boot, in RestoreAfterBoot) has no class at
+            // all until this runs. Re-apply it so a per-user speed limit
+            // survives a suspend/resume cycle.
+            app(TrafficShaper::class)->apply($service);
         }
     }
 
