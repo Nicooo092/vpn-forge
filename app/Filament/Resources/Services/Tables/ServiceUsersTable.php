@@ -242,6 +242,11 @@ class ServiceUsersTable
                     Action::make('download')
                         ->label(__('Download config'))
                         ->icon('heroicon-o-arrow-down-tray')
+                        // Server-side gate: the group's ->visible() hides these
+                        // from an Auditor, but Filament's mountAction checks only
+                        // isDisabled(), not isVisible() -- so ->disabled() is what
+                        // actually blocks a crafted mount-by-name here.
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->action(function (ServiceUser $record) {
                             // Read the copy the privileged worker rendered and
                             // cached at addUser()/applyServiceConfig() time --
@@ -268,6 +273,7 @@ class ServiceUsersTable
                     Action::make('qr')
                         ->label(__('QR code'))
                         ->icon('heroicon-o-qr-code')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         // WireGuard only. An .ovpn embeds the CA, the client
                         // certificate and its private key, which runs to several
                         // kilobytes -- well past what a QR code can carry (~2.9 KB
@@ -292,6 +298,7 @@ class ServiceUsersTable
                     Action::make('share')
                         ->label(__('Share link'))
                         ->icon('heroicon-o-link')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
                         ->modalHeading(fn (ServiceUser $record) => __('One-time link for :name', ['name' => $record->name]))
                         ->modalDescription(__('Creates a public link this person opens to collect their own config, so you never have to send the file. The link is shown once -- copy it before closing.'))
@@ -345,6 +352,7 @@ class ServiceUsersTable
                         ->label(__('Cancel share links'))
                         ->icon('heroicon-o-link-slash')
                         ->color('gray')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->requiresConfirmation()
                         ->modalDescription(__('Kills every share link for this user that has not already been used or expired.'))
                         ->visible(fn (ServiceUser $record) => $record->configLinks()->active()->exists())
@@ -360,6 +368,7 @@ class ServiceUsersTable
                         ->label(__('Regenerate keys'))
                         ->icon('heroicon-o-key')
                         ->color('warning')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->requiresConfirmation()
                         ->modalHeading(fn (ServiceUser $record) => __('Regenerate keys for :name', ['name' => $record->name]))
                         ->modalDescription(__('Issues new key material and stops the current config working immediately -- what a lost or stolen device calls for. The user keeps their name, address, labels and history. They will need the new config.'))
@@ -380,6 +389,7 @@ class ServiceUsersTable
                         ->label(__('Suspend'))
                         ->icon('heroicon-o-pause')
                         ->color('warning')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->requiresConfirmation()
                         ->modalDescription(__('Blocks this user without destroying their keys. You can turn them back on at any time.'))
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
@@ -397,6 +407,7 @@ class ServiceUsersTable
                         ->label(__('Resume'))
                         ->icon('heroicon-o-play')
                         ->color('success')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Suspended)
                         ->action(function (ServiceUser $record) {
                             // Refuse rather than let them straight back in to
@@ -448,6 +459,7 @@ class ServiceUsersTable
                         ->label(__('Revoke'))
                         ->icon('heroicon-o-no-symbol')
                         ->color('danger')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->requiresConfirmation()
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Active)
                         ->action(function (ServiceUser $record) {

@@ -100,6 +100,12 @@ class ServicesTable
                     Action::make('clone')
                         ->label(__('Clone'))
                         ->icon('heroicon-o-document-duplicate')
+                        // Server-side gate: the group's ->visible() hides these
+                        // from an Auditor, but Filament's mountAction checks only
+                        // isDisabled(), not isVisible() -- so a crafted mount-by-
+                        // name would otherwise reach the action. ->disabled()
+                        // blocks that at the framework's own mount guard.
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->action(function (Service $record) {
                             session()->put(
                                 CreateService::CLONE_SESSION_KEY,
@@ -114,6 +120,7 @@ class ServicesTable
                     Action::make('export')
                         ->label(__('Export'))
                         ->icon('heroicon-o-arrow-down-tray')
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->action(fn (Service $record) => response()->streamDownload(
                             fn () => print (app(ServiceDefinition::class)->exportJson($record)),
                             "vpnforge-service-{$record->interface_name}.json",
@@ -143,6 +150,7 @@ class ServicesTable
                         ->requiresConfirmation()
                         ->modalDescription(__('Re-runs provisioning for this service. Existing interfaces and connected clients are left alone.'))
                         ->visible(fn (Service $record) => $record->status === ServiceStatus::Error)
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->action(function (Service $record) {
                             ProvisionService::dispatch($record);
 
@@ -163,6 +171,7 @@ class ServicesTable
                         ->color('danger')
                         ->requiresConfirmation()
                         ->modalDescription(__('This tears down the interface, NAT rules and DNS logging for this service, then deletes it. This cannot be undone.'))
+                        ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                         ->action(function (Service $record) {
                             RemoveService::dispatch($record);
 

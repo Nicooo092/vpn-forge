@@ -65,6 +65,12 @@ class EnforceUserLimits implements ShouldQueue
                 continue;
             }
 
+            // Fires for every still-valid user, whatever the throttle/cut-off
+            // path below does -- a throttled or over-limit user still deserves
+            // the expiry heads-up. (maybeWarnApproachingExpiry self-guards
+            // against already-expired users.)
+            $this->maybeWarnApproachingExpiry($user);
+
             if ($user->isOverDataLimit()) {
                 // Throttle instead of suspending, when the user is set to it and
                 // a throttle rate is configured; otherwise fall back to the
@@ -100,7 +106,6 @@ class EnforceUserLimits implements ShouldQueue
             }
 
             $this->maybeWarnApproachingLimit($user);
-            $this->maybeWarnApproachingExpiry($user);
         }
 
         if ($configChanged) {

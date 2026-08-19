@@ -125,6 +125,8 @@ class TrafficLogsTable
                     ->visible(fn (TrafficLog $record) => (auth()->user()?->isAdmin() ?? false)
                         && filled($record->host)
                         && ! in_array(strtolower($record->host), array_map('strtolower', $service->config['blocked_domains'] ?? []), true))
+                    // isVisible() is not checked on mount-by-name; isDisabled() is.
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                     ->requiresConfirmation()
                     ->modalHeading(fn (TrafficLog $record) => __('Block :host?', ['host' => $record->host]))
                     ->modalDescription(__('Adds this domain (and its subdomains) to the blocklist for everyone on this service. Applied within a few seconds.'))

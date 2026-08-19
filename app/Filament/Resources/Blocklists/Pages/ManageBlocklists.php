@@ -30,6 +30,7 @@ class ManageBlocklists extends ManageRecords
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
                 ->visible(fn () => auth()->user()?->isAdmin() ?? false)
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->action(fn () => $this->recompile(__('Refreshing blocklists'))),
         ];
     }

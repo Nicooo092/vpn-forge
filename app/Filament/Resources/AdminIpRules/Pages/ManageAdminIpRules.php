@@ -27,6 +27,7 @@ class ManageAdminIpRules extends ManageRecords
                 ->icon('heroicon-o-plus')
                 ->color('gray')
                 ->visible(fn () => auth()->user()?->isAdmin() ?? false)
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->action(function (): void {
                     $ip = request()->ip();
 
