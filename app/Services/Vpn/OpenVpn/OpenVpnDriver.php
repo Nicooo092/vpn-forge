@@ -360,6 +360,15 @@ class OpenVpnDriver implements VpnProtocolDriver
             Process::run(['iptables', '-t', 'nat', '-D', 'POSTROUTING', ...$rule]);
         }
 
+        // Mirror-image of the FORWARD rules writeServerConfig() adds.
+        foreach ([['-i', $service->interface_name], ['-o', $service->interface_name]] as $direction) {
+            $forward = [...$direction, '-j', 'ACCEPT'];
+
+            if (Process::run(['iptables', '-C', 'FORWARD', ...$forward])->successful()) {
+                Process::run(['iptables', '-D', 'FORWARD', ...$forward]);
+            }
+        }
+
         if (File::isDirectory($dir)) {
             File::deleteDirectory($dir);
         }
@@ -609,6 +618,20 @@ class OpenVpnDriver implements VpnProtocolDriver
 
         if (! $ruleExists) {
             Process::run(['iptables', '-t', 'nat', '-A', 'POSTROUTING', '-s', $service->subnet_cidr, '-o', $egressInterface, '-j', 'MASQUERADE'])->throw();
+        }
+
+        // Allow forwarding in and out of the tunnel interface. Without these the
+        // service routes nothing whenever the FORWARD policy is not ACCEPT --
+        // which is the case as soon as Docker is installed (it sets it to DROP).
+        // The WireGuard driver gets the equivalent through its PostUp line;
+        // OpenVPN has no such hook, so add them here, idempotently, and remove
+        // them in removeService().
+        foreach ([['-i', $service->interface_name], ['-o', $service->interface_name]] as $direction) {
+            $rule = [...$direction, '-j', 'ACCEPT'];
+
+            if (! Process::run(['iptables', '-C', 'FORWARD', ...$rule])->successful()) {
+                Process::run(['iptables', '-A', 'FORWARD', ...$rule])->throw();
+            }
         }
     }
 
