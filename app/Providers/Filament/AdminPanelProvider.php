@@ -2,7 +2,6 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Auth\SvgAppAuthentication;
 use App\Http\Middleware\RestrictAdminIps;
 use App\Http\Middleware\SecurityHeaders;
 use Filament\Http\Middleware\Authenticate;
@@ -15,6 +14,7 @@ use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
 use Filament\View\PanelsRenderHook;
+use Stephenjude\FilamentTwoFactorAuthentication\TwoFactorAuthenticationPlugin;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -33,20 +33,23 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             // A panel that can read everyone's browsing history is worth a
-            // second factor. Required by default (config/vpnforge.php ->
-            // security.require_mfa): an account without it is walked through
-            // enrolment on next login rather than locked out. Set
+            // second factor. This plugin provides both a phishing-resistant
+            // passkey (WebAuthn: fingerprint / face / device PIN / security key)
+            // AND an authenticator-app TOTP, with recovery codes. When
+            // security.require_mfa is on (the default) every account is walked
+            // through enrolment on next login rather than locked out; set
             // VPNFORGE_REQUIRE_MFA=false to fall back to a password alone.
-            ->multiFactorAuthentication(
-                SvgAppAuthentication::make()
-                    // Without recovery codes, losing the phone means losing
-                    // the panel, and the only way back is editing the
-                    // database by hand over SSH.
-                    ->recoverable(),
-                isRequired: (bool) config('vpnforge.security.require_mfa', true),
-            )
-            // Where an operator sets it up, and the only page that exposes
-            // those actions.
+            ->plugins([
+                TwoFactorAuthenticationPlugin::make()
+                    ->enableTwoFactorAuthentication()
+                    ->enablePasskeyAuthentication()
+                    ->addTwoFactorMenuItem()
+                    ->forceTwoFactorSetup(
+                        condition: (bool) config('vpnforge.security.require_mfa', true),
+                    ),
+            ])
+            // The account/profile page (the plugin adds its 2FA + passkey
+            // management into the user menu via addTwoFactorMenuItem()).
             ->profile()
             ->brandName('vpn-forge')
             // Filament otherwise caps page content at 7xl (80rem / 1280px)

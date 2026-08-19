@@ -5,8 +5,6 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\UserRole;
 use Database\Factories\UserFactory;
-use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
-use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -14,14 +12,15 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use SensitiveParameter;
+use Spatie\LaravelPasskeys\Models\Concerns\HasPasskeys;
+use Stephenjude\FilamentTwoFactorAuthentication\TwoFactorAuthenticatable;
 
 #[Fillable(['name', 'email', 'password', 'role'])]
-#[Hidden(['password', 'remember_token', 'app_authentication_secret', 'app_authentication_recovery_codes'])]
-class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
+#[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
+class User extends Authenticatable implements FilamentUser, HasPasskeys
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * Without this contract Filament only lets a user in when the app is
@@ -79,47 +78,13 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'email_verified_at' => 'datetime',
             'role' => UserRole::class,
             'password' => 'hashed',
-            // Not hashed, because verifying a code needs the original value
-            // back -- so encrypted at rest instead, behind APP_KEY.
-            'app_authentication_secret' => 'encrypted',
-            'app_authentication_recovery_codes' => 'encrypted:array',
+            // two_factor_secret / two_factor_recovery_codes are deliberately NOT
+            // cast: the TwoFactorAuthenticatable trait encrypts and decrypts them
+            // itself (encrypt()/decrypt()), so an 'encrypted' cast here would
+            // double-encrypt and break verification. They are hidden above and,
+            // like every APP_KEY-encrypted column, decryptable only with the key
+            // the backup archive carries.
+            'two_factor_confirmed_at' => 'datetime',
         ];
-    }
-
-    public function getAppAuthenticationSecret(): ?string
-    {
-        return $this->app_authentication_secret;
-    }
-
-    public function saveAppAuthenticationSecret(#[SensitiveParameter] ?string $secret): void
-    {
-        $this->app_authentication_secret = $secret;
-        $this->save();
-    }
-
-    /**
-     * What the authenticator app shows beside the code, so someone with
-     * several accounts can tell them apart.
-     */
-    public function getAppAuthenticationHolderName(): string
-    {
-        return $this->email;
-    }
-
-    /**
-     * @return ?array<string>
-     */
-    public function getAppAuthenticationRecoveryCodes(): ?array
-    {
-        return $this->app_authentication_recovery_codes;
-    }
-
-    /**
-     * @param  ?array<string>  $codes
-     */
-    public function saveAppAuthenticationRecoveryCodes(#[SensitiveParameter] ?array $codes): void
-    {
-        $this->app_authentication_recovery_codes = $codes;
-        $this->save();
     }
 }

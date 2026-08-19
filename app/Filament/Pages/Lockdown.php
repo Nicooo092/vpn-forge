@@ -161,24 +161,26 @@ class Lockdown extends Page
 
     /**
      * Both directions are confirmed with the operator's own current TOTP code,
-     * verified against their encrypted app-authentication secret the same way
-     * the panel's second factor is (google2fa verifyKey, +/-1 step). No secret
-     * means no confirmation is possible -- refuse and say so, rather than
-     * letting a password-only account throw the switch.
+     * verified against their encrypted authenticator secret with google2fa
+     * (verifyKey, +/-1 step). This step-up needs an authenticator-app code, so
+     * an account with only a passkey (no TOTP secret) cannot confirm -- refuse
+     * and say so, rather than letting an unverifiable account throw the switch.
      */
     private function assertValidCode(string $code): void
     {
-        $secret = auth()->user()?->getAppAuthenticationSecret();
+        $user = auth()->user();
 
-        if (blank($secret)) {
+        if (! ($user?->hasEnabledTwoFactorAuthentication() ?? false)) {
             Notification::make()
-                ->title(__('Set up two-factor authentication first'))
-                ->body(__('This control is confirmed with your authenticator code, and your account has none set up yet. Add one from your profile, then try again.'))
+                ->title(__('Set up an authenticator app first'))
+                ->body(__('This control is confirmed with your authenticator code. Add an authenticator app from the two-factor menu, then try again.'))
                 ->warning()
                 ->send();
 
             throw new Halt;
         }
+
+        $secret = decrypt($user->two_factor_secret);
 
         $clean = preg_replace('/\s+/', '', $code);
 

@@ -106,7 +106,8 @@ class GettingStarted extends Widget
             [
                 'title' => 'Turn on two-factor authentication',
                 'description' => 'This panel can read everyone\'s browsing history -- a second factor is worth it.',
-                'done' => filled(Auth::user()?->app_authentication_secret),
+                'done' => (Auth::user()?->hasEnabledTwoFactorAuthentication() ?? false)
+                    || (Auth::user()?->hasEnabledPasskeyAuthentication() ?? false),
                 'url' => Filament::getProfileUrl() ?? '#',
                 'cta' => 'Set up 2FA',
                 'icon' => 'heroicon-o-lock-closed',
