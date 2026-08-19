@@ -12,6 +12,7 @@ use App\Services\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
@@ -44,6 +45,13 @@ class PollAllServiceStatuses implements ShouldQueue
                 $service->forceFill(['last_error' => $e->getMessage()])->save();
             }
         }
+
+        // Heartbeat. This job runs every minute on the privileged worker, so a
+        // fresh timestamp here is proof the worker is alive and draining the
+        // queue that carries every enforcement job. The Server health page
+        // reads it; a stale value means the worker has stopped and access
+        // windows, quotas and device caps are no longer being applied.
+        Cache::put('vpnforge:worker-heartbeat', Carbon::now()->timestamp, Carbon::now()->addDay());
     }
 
     private function pollOne(Service $service): void

@@ -8,6 +8,7 @@ use App\Models\BandwidthSample;
 use App\Models\ConnectionLog;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,7 +31,31 @@ class SystemHealth
             'uptime_seconds' => $this->uptimeSeconds(),
             'counts' => $this->counts(),
             'bandwidth_24h' => $this->bandwidth24h(),
+            'worker' => $this->worker(),
+            'failed_jobs' => (int) DB::table('failed_jobs')->count(),
         ];
+    }
+
+    /**
+     * The privileged worker writes a heartbeat every minute (see
+     * PollAllServiceStatuses). A stale one means it has stopped -- and with it
+     * every enforcement job -- even though the panel itself keeps serving.
+     *
+     * @return array{last_run: ?int, age_seconds: ?int, healthy: ?bool}
+     */
+    private function worker(): array
+    {
+        $last = Cache::get('vpnforge:worker-heartbeat');
+
+        if ($last === null) {
+            return ['last_run' => null, 'age_seconds' => null, 'healthy' => null];
+        }
+
+        $age = max(0, now()->timestamp - (int) $last);
+
+        // The poller runs every minute; a few minutes without one means it has
+        // stopped rather than merely being between ticks.
+        return ['last_run' => (int) $last, 'age_seconds' => $age, 'healthy' => $age <= 180];
     }
 
     /**

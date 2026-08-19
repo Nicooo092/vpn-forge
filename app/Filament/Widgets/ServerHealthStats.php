@@ -49,6 +49,8 @@ class ServerHealthStats extends StatsOverviewWidget
             Stat::make(__('Connected now'), (string) $s['counts']['connected_now'])
                 ->description(__('devices'))
                 ->descriptionIcon('heroicon-m-signal'),
+            $this->workerStat($s['worker']),
+            $this->failedJobsStat($s['failed_jobs']),
             Stat::make(__('Traffic (24h)'), $this->formatBytes($s['bandwidth_24h']))
                 ->description(__('last 24 hours'))
                 ->descriptionIcon('heroicon-m-arrows-right-left'),
@@ -133,6 +135,37 @@ class ServerHealthStats extends StatsOverviewWidget
             ]))
             ->descriptionIcon('heroicon-m-server')
             ->color($this->thresholdColor($disk['percent'], 70, 85));
+    }
+
+    /**
+     * @param  array{last_run: ?int, age_seconds: ?int, healthy: ?bool}  $worker
+     */
+    private function workerStat(array $worker): Stat
+    {
+        if ($worker['healthy'] === null) {
+            return Stat::make(__('Worker'), '--')
+                ->description(__('no heartbeat yet'))
+                ->descriptionIcon('heroicon-m-bolt')
+                ->color('gray');
+        }
+
+        $healthy = $worker['healthy'];
+        $age = (int) $worker['age_seconds'];
+
+        return Stat::make(__('Worker'), $healthy ? __('Running') : __('Stalled'))
+            ->description($healthy
+                ? __('last run :s s ago', ['s' => $age])
+                : __('no heartbeat for :s s', ['s' => $age]))
+            ->descriptionIcon('heroicon-m-bolt')
+            ->color($healthy ? 'success' : 'danger');
+    }
+
+    private function failedJobsStat(int $count): Stat
+    {
+        return Stat::make(__('Failed jobs'), (string) $count)
+            ->description($count === 0 ? __('none') : __('need attention'))
+            ->descriptionIcon('heroicon-m-exclamation-triangle')
+            ->color($count === 0 ? 'success' : 'danger');
     }
 
     /**
