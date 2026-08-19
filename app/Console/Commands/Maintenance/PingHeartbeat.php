@@ -7,9 +7,11 @@ use App\Models\Service;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -44,11 +46,29 @@ class PingHeartbeat extends Command
             Http::timeout(10)->get($url)->throw();
         } catch (Throwable $e) {
             // A missed ping is what the monitor alerts on; leave a breadcrumb
-            // but never fail the scheduler run over an unreachable endpoint.
-            Log::warning('External heartbeat ping failed: '.$e->getMessage());
+            // but never fail the scheduler run over an unreachable endpoint --
+            // and never log the raw message: this URL is the feature's only
+            // secret (its path carries the push token), and a connection error
+            // embeds the full request URI verbatim.
+            Log::warning('External heartbeat ping failed: '.$this->safeError($e));
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A log-safe description of a ping failure: an HTTP error is reduced to its
+     * status, and any URL in any other message is redacted -- so the secret
+     * heartbeat URL never reaches laravel.log. Mirrors the redaction the
+     * notification transport already applies to its endpoint errors.
+     */
+    private function safeError(Throwable $e): string
+    {
+        $message = $e instanceof RequestException
+            ? 'HTTP '.($e->response?->status() ?? '?')
+            : $e->getMessage();
+
+        return Str::limit((string) preg_replace('#https?://\S+#i', '[endpoint]', $message), 200);
     }
 
     /**

@@ -75,6 +75,16 @@ class ConnectionLogsTable
     }
 
     /**
+     * Memoised per row for this request: the country column reads geoState in
+     * both its ->state() and its ->description() closure, and for legacy rows
+     * (country and asn both null) that falls through to a live GeoLocator
+     * lookup -- which would otherwise run twice per row on every 60s poll.
+     *
+     * @var array<int|string, array{country_code: ?string, country_name: ?string, asn: ?int, as_org: ?string}|null>
+     */
+    private static array $geoCache = [];
+
+    /**
      * Geo (country + ASN) for a row: prefer what was captured on it when the
      * session opened, else a live lookup for rows predating the databases. Null
      * when nothing is known.
@@ -83,8 +93,14 @@ class ConnectionLogsTable
      */
     private static function geoState(ConnectionLog $record): ?array
     {
+        $key = $record->getKey();
+
+        if (array_key_exists($key, self::$geoCache)) {
+            return self::$geoCache[$key];
+        }
+
         if ($record->country_code !== null || $record->asn !== null) {
-            return [
+            return self::$geoCache[$key] = [
                 'country_code' => $record->country_code,
                 'country_name' => $record->country_name,
                 'asn' => $record->asn,
@@ -92,7 +108,7 @@ class ConnectionLogsTable
             ];
         }
 
-        return app(GeoLocator::class)->locate($record->peer_ip);
+        return self::$geoCache[$key] = app(GeoLocator::class)->locate($record->peer_ip);
     }
 
     /**

@@ -22,13 +22,15 @@ class MetricsEndpointTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function service(string $name = 'office', ServiceStatus $status = ServiceStatus::Active): Service
+    private function service(string $name = 'office', ServiceStatus $status = ServiceStatus::Active, int $port = 51820): Service
     {
         return Service::create([
             'name' => $name,
             'interface_name' => 'wg-'.$name,
             'subnet_cidr' => '10.0.0.0/24',
-            'listen_port' => 51820,
+            // Distinct per service: (transport, listen_port) is unique -- two
+            // UDP services cannot share a port -- so a second service needs its own.
+            'listen_port' => $port,
             'protocol' => VpnProtocol::WireGuard,
             'transport' => Transport::Udp,
             'status' => $status,
@@ -56,7 +58,7 @@ class MetricsEndpointTest extends TestCase
     {
         config()->set('vpnforge.metrics.token', 'super-secret-token');
         $this->service('office');
-        $this->service('branch', ServiceStatus::Disabled);
+        $this->service('branch', ServiceStatus::Disabled, 51821);
 
         $response = $this->withToken('super-secret-token')->get('/metrics');
 

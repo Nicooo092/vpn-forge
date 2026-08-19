@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Vpn;
 
+use App\Enums\QuotaAction;
 use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
@@ -60,10 +61,15 @@ class EnforceAccessWindows implements ShouldQueue
             if ($user->status === ServiceUserStatus::Active && ! $within) {
                 // Clock left the window: suspend. Deliberately no notification
                 // -- a scheduled window closing is routine and would alert
-                // every evening for every scheduled device.
+                // every evening for every scheduled device. Clear any throttle
+                // flag so the row reflects the real reason it is suspended
+                // ('outside access hours'), not a stale 'throttled' badge;
+                // EnforceUserLimits re-applies the throttle if they come back
+                // over the allowance once the window reopens.
                 $user->forceFill([
                     'status' => ServiceUserStatus::Suspended,
                     'suspended_reason' => self::REASON,
+                    'quota_throttled' => false,
                 ])->save();
                 $changed = true;
 
@@ -112,6 +118,19 @@ class EnforceAccessWindows implements ShouldQueue
 
     private function blockedByOtherLimit(ServiceUser $user): bool
     {
-        return $user->isExpired() || $user->isOverDataLimit();
+        // Expiry is always a hard cut-off. An exhausted data allowance only
+        // keeps them suspended when their quota action is Suspend -- a
+        // Throttle-action user is meant to come back connected-but-slow, so do
+        // NOT treat over-limit as a blocker for them: resume them here and let
+        // EnforceUserLimits re-throttle, rather than stranding them suspended
+        // (nothing else would ever revive a throttle-action user with no reset).
+        if ($user->isExpired()) {
+            return true;
+        }
+
+        $throttles = $user->quota_action === QuotaAction::Throttle
+            && $user->quota_throttle_kbps !== null;
+
+        return $user->isOverDataLimit() && ! $throttles;
     }
 }

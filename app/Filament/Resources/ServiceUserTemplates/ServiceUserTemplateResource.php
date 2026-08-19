@@ -159,7 +159,7 @@ class ServiceUserTemplateResource extends Resource
             ])
             ->emptyStateIcon('heroicon-o-rectangle-stack')
             ->emptyStateHeading(__('No templates yet'))
-            ->emptyStateDescription(__('Create a reusable profile â€” a name plus a set of default limits â€” to apply with one click when adding a user.'))
+            ->emptyStateDescription(__('Create a reusable profile — a name plus a set of default limits — to apply with one click when adding a user.'))
             ->defaultSort('name');
     }
 

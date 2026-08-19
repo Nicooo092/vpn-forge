@@ -111,7 +111,9 @@ return [
     |
     | How many days ahead of a user's expires_at to raise a one-off operator
     | "expiring soon" alert (de-duplicated per user per expiry). Set to 0 to
-    | disable expiry warnings entirely. Operator-side only.
+    | disable expiry warnings entirely -- this one window governs BOTH the
+    | operator alert and the end-user "your access is about to expire" email, so
+    | 0 turns off both.
     |
     */
 

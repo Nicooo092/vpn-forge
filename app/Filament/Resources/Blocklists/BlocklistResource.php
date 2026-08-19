@@ -95,6 +95,11 @@ class BlocklistResource extends Resource
                     ->weight('bold')
                     ->description(fn (Blocklist $record) => $record->url, position: 'below'),
                 ToggleColumn::make('enabled')
+                    // An inline toggle updates the row through Livewire directly,
+                    // a path the read-only policy does not gate -- so disable it
+                    // for auditors explicitly, matching every other mutating
+                    // control in the panel.
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                     // Switching a list on or off re-compiles so it applies
                     // without a separate "refresh" click.
                     ->afterStateUpdated(fn () => RefreshBlocklists::dispatch()),

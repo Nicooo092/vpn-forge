@@ -43,7 +43,12 @@ class Updates extends Page
             Action::make('check')
                 ->label(__('Check now'))
                 ->icon('heroicon-o-arrow-path')
+                // Makes an outbound request and rewrites the cached status --
+                // a side effect, so admin-only like every other action here.
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->action(function (): void {
+                    abort_unless(auth()->user()?->isAdmin() ?? false, 403);
+
                     app(UpdateChecker::class)->check(fresh: true);
 
                     Notification::make()->title(__('Checked for updates'))->success()->send();

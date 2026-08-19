@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GuardsAdminActions;
 use App\Services\Logs\LogExporter;
 use App\Services\Reports\ExportArchive;
 use BackedEnum;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\File;
  */
 class Exports extends Page
 {
+    use GuardsAdminActions;
+
     protected string $view = 'filament.pages.exports';
 
     protected static ?int $navigationSort = 85;
@@ -57,11 +60,21 @@ class Exports extends Page
      */
     protected function getHeaderActions(): array
     {
+        // These produce files that hold every user's browsing history, so
+        // generating and exporting them is admin-only, not merely read. As on
+        // the Backups page, ->visible hides the button but Filament's
+        // mountAction checks isDisabled(), not isVisible() -- so ->disabled()
+        // plus the server-side guard inside each closure are what actually stop
+        // an auditor mounting these by name.
         return [
             Action::make('generateReports')
                 ->label(__('Generate reports now'))
                 ->icon('heroicon-o-chart-pie')
+                ->visible(static::adminOnly())
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->action(function (): void {
+                    $this->abortUnlessAdmin();
+
                     Artisan::call('vpnforge:export-report');
 
                     Notification::make()
@@ -73,9 +86,13 @@ class Exports extends Page
             Action::make('exportLogs')
                 ->label(__('Export logs (CSV)'))
                 ->icon('heroicon-o-table-cells')
+                ->visible(static::adminOnly())
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->requiresConfirmation()
                 ->modalDescription(__('Writes the traffic, connection and bandwidth logs to a zip of CSV files you can download below.'))
                 ->action(function (LogExporter $exporter, ExportArchive $archive): void {
+                    $this->abortUnlessAdmin();
+
                     $zip = $exporter->exportZip();
                     $archive->put('logs-'.now()->format('Y-m-d_His').'.zip', File::get($zip));
                     File::delete($zip);
@@ -95,6 +112,11 @@ class Exports extends Page
 
     public function download(string $name): mixed
     {
+        // These exports contain every user's browsing history -- downloading
+        // one is admin-only, and a plain Livewire call would otherwise reach
+        // this method whether or not the button is shown.
+        $this->abortUnlessAdmin();
+
         $path = app(ExportArchive::class)->resolve($name);
 
         if ($path === null) {
@@ -108,6 +130,8 @@ class Exports extends Page
 
     public function delete(string $name): void
     {
+        $this->abortUnlessAdmin();
+
         $path = app(ExportArchive::class)->resolve($name);
 
         if ($path !== null) {

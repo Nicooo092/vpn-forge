@@ -48,6 +48,7 @@ class RestoreArchive
 
         try {
             $this->extract($archivePath, $work);
+            $this->guardAppKeyMatches($work);
             $this->importDatabase("{$work}/database.sql");
             $this->clearVolatileState();
             $this->restoreDirectories($work);
@@ -55,6 +56,45 @@ class RestoreArchive
         } finally {
             File::deleteDirectory($work);
         }
+    }
+
+    /**
+     * A backup's database encrypts client keys, rendered configs and two-factor
+     * secrets under the APP_KEY of the host that made it. Importing that dump
+     * onto a host with a DIFFERENT APP_KEY (a rebuilt box) would leave every one
+     * of those columns permanently undecryptable -- config downloads, key
+     * rotation and MFA login would all throw, with the restoring admin's own row
+     * overwritten by an unreadable 2FA secret. The archive carries that host's
+     * .env precisely so a rebuilt host can be brought back, but this automated
+     * path deliberately does not rewrite the running .env (that is the operator's
+     * manual step, documented in the backup README). So refuse loudly, before
+     * the import changes anything, when the keys do not match -- a clear stop
+     * beats a silent, unloggable-into half-restore.
+     */
+    private function guardAppKeyMatches(string $work): void
+    {
+        $archivedEnv = "{$work}/env";
+
+        // A pre-.env archive (or one without APP_KEY) cannot be checked; the
+        // same-host case it protects against is the only one this guards.
+        if (! File::exists($archivedEnv)
+            || ! preg_match('/^APP_KEY=(.*)$/m', File::get($archivedEnv), $m)) {
+            return;
+        }
+
+        $archivedKey = trim($m[1], " \t\"'");
+        $runningKey = (string) config('app.key');
+
+        if ($archivedKey === '' || $runningKey === '' || hash_equals($archivedKey, $runningKey)) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'This backup was made on a host with a different APP_KEY. Its database encrypts '
+            .'client keys and two-factor secrets under that key, so importing it here would leave '
+            .'them permanently unreadable. Restore the archived .env (its APP_KEY) by hand first -- '
+            .'see the backup README -- then restore again. Nothing has been changed.'
+        );
     }
 
     /**

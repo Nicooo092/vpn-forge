@@ -152,6 +152,10 @@ class TrafficLogsTable
                 Action::make('export')
                     ->label(__('Export logs'))
                     ->icon('heroicon-o-arrow-down-tray')
+                    // Produces a downloadable file of every user's browsing on
+                    // this service -- admin-only, and isDisabled() (not
+                    // isVisible()) is what mount-by-name checks.
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                     ->action(function () use ($service) {
                         $zipPath = app(LogExporter::class)->exportZip($service->id);
 

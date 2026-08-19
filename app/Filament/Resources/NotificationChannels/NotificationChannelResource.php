@@ -127,7 +127,11 @@ class NotificationChannelResource extends Resource
             ->columns([
                 TextColumn::make('name')->searchable()->weight('bold'),
                 TextColumn::make('type')->badge(),
-                ToggleColumn::make('enabled'),
+                // Inline toggles update the row through Livewire directly, which
+                // the read-only policy does not gate -- disable it for auditors
+                // so a read-only account cannot silence an alert channel.
+                ToggleColumn::make('enabled')
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false)),
                 IconColumn::make('last_error')
                     ->label(__('OK'))
                     ->boolean()

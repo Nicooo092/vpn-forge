@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\Metrics\PrometheusExporter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 /**
@@ -35,7 +36,15 @@ class MetricsController extends Controller
                 ->header('Cache-Control', 'no-store');
         }
 
-        return response($exporter->render(), SymfonyResponse::HTTP_OK)
+        // render() drives a full health snapshot (several COUNT/SUM queries plus
+        // /proc and disk reads). Share it across a burst of scrapes with a short
+        // server-side cache -- the numbers barely move within it, and this keeps
+        // a tight scrape interval off the database, exactly as the blocking
+        // widgets already do. The no-store header is about the SCRAPER not
+        // caching a credentialed body; it is unrelated to this internal reuse.
+        $body = Cache::remember('vpnforge:metrics:render', 15, fn () => $exporter->render());
+
+        return response($body, SymfonyResponse::HTTP_OK)
             ->header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
             ->header('Cache-Control', 'no-store');
     }

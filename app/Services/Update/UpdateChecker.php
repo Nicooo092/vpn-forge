@@ -130,6 +130,17 @@ class UpdateChecker
             'sudo -u www-data git pull --ff-only',
             'sudo -u www-data env COMPOSER_HOME=/tmp/composer HOME=/tmp/composer composer install --no-dev --optimize-autoloader --no-interaction',
             'sudo -u www-data php artisan migrate --force',
+            // Rebuild the Go capture agent so agent/*.go changes actually deploy
+            // -- its INSERTs and columns must track the migrations (a stale
+            // binary silently stops populating new columns like traffic_logs.blocked,
+            // and the blocking dashboard then shows nothing). Skipped cleanly if
+            // Go is not installed, leaving the running binary as-is.
+            'if command -v go >/dev/null 2>&1; then (cd '.$dir.'/agent && sudo go build -buildvcs=false -o /usr/local/bin/vpnforge-agent .) && sudo setcap cap_net_raw,cap_net_admin=eip /usr/local/bin/vpnforge-agent && sudo systemctl restart vpnforge-agent; fi',
+            // Provision the optional GeoIP databases if this upgrade is the one
+            // that introduced them: the directory is otherwise created only on a
+            // fresh install, and the monthly refresh deliberately no-ops while it
+            // is absent, so enrichment would never switch on. No-op once present.
+            'if [ ! -d /etc/vpnforge/geoip ]; then sudo install -d -o vpnforge-worker -g vpnforge-worker -m 755 /etc/vpnforge/geoip && sudo -u www-data php artisan vpnforge:geoip-refresh; fi',
             'sudo systemctl restart vpnforge-worker',
             'sudo systemctl reload php8.3-fpm',
         ]);

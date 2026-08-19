@@ -271,7 +271,14 @@ class ServiceUsersTable
                             // needs nothing: the capture agent re-reads the user
                             // table on its own.
                             $configChanged = $record->wasChanged('tunnel_ip') || $record->wasChanged('dns_override');
-                            $shapingChanged = $record->wasChanged('rate_limit_kbps');
+                            // A throttle-rate change matters only while the user
+                            // is actively throttled -- otherwise it is a dormant
+                            // value and EnforceUserLimits applies it when the
+                            // throttle next kicks in. When they ARE throttled the
+                            // kernel tc classes must be rebuilt now, or the DB and
+                            // the live cap disagree until an unrelated event.
+                            $shapingChanged = $record->wasChanged('rate_limit_kbps')
+                                || ($record->wasChanged('quota_throttle_kbps') && $record->quota_throttled);
 
                             if (! $configChanged && ! $shapingChanged) {
                                 return;

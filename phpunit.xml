@@ -20,6 +20,13 @@
     <php>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <!-- Pin panel behaviour so the suite does not inherit a box's production
+             .env: without this, MFA enforcement 302-redirects every authenticated
+             page test to two-factor enrolment, and the panel locale drifts the
+             English strings these tests assert on. -->
+        <env name="VPNFORGE_REQUIRE_MFA" value="false"/>
+        <env name="APP_LOCALE" value="en"/>
+        <env name="APP_FALLBACK_LOCALE" value="en"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>

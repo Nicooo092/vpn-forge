@@ -62,12 +62,30 @@ func sanitizeHeaders(header http.Header) map[string]string {
 // fully robust HTTP/1.1 reassembly implementation is a much larger effort
 // than this capture agent's scope justifies for a personal panel.
 func CaptureHTTP(ctx context.Context, service ServiceInfo, store *Store, usersFn func() map[string]UserInfo) {
-	handle, err := pcap.OpenLive(service.InterfaceName, 65536, false, pcap.BlockForever)
-	if err != nil {
-		log.Printf("http[%d]: could not open interface %s (retrying in 30s): %v", service.ID, service.InterfaceName, err)
-		time.Sleep(30 * time.Second)
+	// Retry OpenLive rather than returning on the first failure: the watcher
+	// records this service as "running" before launching the goroutine and
+	// never restarts a goroutine that exits, so a bare return would leave HTTP
+	// capture permanently off (e.g. when the agent races ahead of the tunnel
+	// interface coming up after a reboot). Mirror the DNS tailer, which
+	// tolerates a not-yet-present source the same way. ctx-aware so a removed
+	// service still stops promptly.
+	var handle *pcap.Handle
 
-		return
+	for {
+		h, err := pcap.OpenLive(service.InterfaceName, 65536, false, pcap.BlockForever)
+		if err == nil {
+			handle = h
+
+			break
+		}
+
+		log.Printf("http[%d]: could not open interface %s (retrying in 30s): %v", service.ID, service.InterfaceName, err)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
 	}
 	defer handle.Close()
 

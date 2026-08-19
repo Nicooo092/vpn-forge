@@ -138,11 +138,14 @@ class TrafficShapingTest extends TestCase
 
     public function test_apply_throws_when_a_setup_command_fails(): void
     {
-        // Teardown (del) still succeeds; a class-add fails -> not tolerated.
-        Process::fake([
-            'tc class add*' => Process::result(exitCode: 1, errorOutput: 'boom'),
-            '*' => Process::result(exitCode: 0),
-        ]);
+        // A limited user means the plan carries the HTB build steps, which are
+        // NOT allowFail (unlike teardown). Fail every command: teardown is
+        // tolerated, but the first setup step (qdisc/class add) must surface as
+        // a RuntimeException. (Process::fake matches string patterns against an
+        // array command's cast, i.e. "Array", so only '*' reliably matches an
+        // argv-array command -- hence the blanket failure rather than a
+        // per-command pattern.)
+        Process::fake(['*' => Process::result(exitCode: 1, errorOutput: 'boom')]);
 
         $service = $this->service();
         $this->user($service, '10.0.0.2', 5000);

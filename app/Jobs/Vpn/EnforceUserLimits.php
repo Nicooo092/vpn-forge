@@ -129,9 +129,14 @@ class EnforceUserLimits implements ShouldQueue
 
     private function suspend(ServiceUser $user, string $reason, Service $service): void
     {
+        // Clear any throttle flag on the way down: a suspended user is not
+        // "throttled", and the users table renders quota_throttled first, so a
+        // stale true would mislabel an expired/over-limit suspension as
+        // 'throttled (data limit)'.
         $user->forceFill([
             'status' => ServiceUserStatus::Suspended,
             'suspended_reason' => $reason,
+            'quota_throttled' => false,
         ])->save();
 
         app(Notifier::class)->event(

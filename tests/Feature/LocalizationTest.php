@@ -48,6 +48,39 @@ class LocalizationTest extends TestCase
     }
 
     /**
+     * The key-parity test above compares only keys, so a mass value-encoding
+     * corruption (an authoring/export step re-encoding UTF-8 through cp1252 and
+     * leaving every accent double-encoded) once shipped entirely green. Pin the
+     * mojibake signature -- the tell-tale "Ã…"/"Â…"/"â€…" runs a double-encode
+     * produces -- so any future value-encoding regression fails here instead of
+     * rendering garbled accents on every non-English panel.
+     */
+    public function test_no_language_file_contains_double_encoded_utf8(): void
+    {
+        // Ã/Â followed by a Latin-1 high byte, or the â€ that leads every
+        // double-encoded smart-quote/dash. Real accented text never matches:
+        // it stores 'é' (one codepoint), not 'Ã' + '©'.
+        $mojibake = '/[\x{00C3}\x{00C2}][\x{0080}-\x{00BF}]|\x{00E2}\x{20AC}/u';
+
+        foreach (['fr', 'es', 'de', 'it', 'pt'] as $locale) {
+            $catalogue = json_decode(file_get_contents(lang_path("{$locale}.json")), true);
+
+            foreach ($catalogue as $key => $value) {
+                $this->assertSame(
+                    0,
+                    preg_match($mojibake, (string) $value),
+                    "{$locale}.json has a double-encoded (mojibake) value for key: {$key}"
+                );
+                $this->assertSame(
+                    0,
+                    preg_match($mojibake, (string) $key),
+                    "{$locale}.json has a double-encoded (mojibake) key: {$key}"
+                );
+            }
+        }
+    }
+
+    /**
      * Strings reached as __($variable) are invisible to a literal-only key
      * extractor. Regenerating the catalogues from extracted literals alone once
      * silently dropped every one of these, which turned the whole first-run

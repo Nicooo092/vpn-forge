@@ -98,12 +98,18 @@ class ExpiryAlertTest extends TestCase
 
         (new EnforceUserLimits)->handle();
 
-        // Suspension fires, the expiry heads-up does not.
+        // Suspension fires, the expiry heads-up does not. The two-argument
+        // shouldNotHaveReceived() is what actually narrows to these args on a
+        // spy -- the ->with() fluent form does not, and would wrongly flag the
+        // UserSuspended call above as a violation.
         $spy->shouldHaveReceived('event')
             ->with(NotificationEvent::UserSuspended, Mockery::type('string'), Mockery::type('string'))
             ->once();
-        $spy->shouldNotHaveReceived('event')
-            ->with(NotificationEvent::ExpiryApproaching, Mockery::type('string'), Mockery::type('string'));
+        $spy->shouldNotHaveReceived('event', [
+            NotificationEvent::ExpiryApproaching,
+            Mockery::type('string'),
+            Mockery::type('string'),
+        ]);
     }
 
     public function test_a_new_expiry_date_re_arms_the_warning(): void
