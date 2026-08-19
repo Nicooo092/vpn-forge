@@ -54,9 +54,13 @@ class ServiceUsersTable
                     // the suspend action below as a stable English key, so what
                     // is stored never depends on the admin's locale. Translate
                     // it here, at the only place it is read by a human.
-                    ->description(fn (ServiceUser $record) => $record->suspended_reason
-                        ? __($record->suspended_reason)
-                        : null),
+                    ->description(fn (ServiceUser $record) => match (true) {
+                        // A throttled user stays Active, so surface the throttle
+                        // here or it would be invisible in the table.
+                        $record->quota_throttled => __('throttled (data limit)'),
+                        $record->suspended_reason !== null => __($record->suspended_reason),
+                        default => null,
+                    }),
                 TextColumn::make('labels')
                     ->label(__('Labels'))
                     ->badge()

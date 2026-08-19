@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\QuotaAction;
+use App\Enums\QuotaReset;
 use App\Enums\ServiceUserStatus;
 use App\Models\Concerns\RecordsChanges;
 use App\Services\Vpn\ClientConfigFile;
@@ -53,6 +55,10 @@ class ServiceUser extends Model
         'expires_at',
         'data_limit_bytes',
         'quota_started_at',
+        'quota_action',
+        'quota_throttle_kbps',
+        'quota_throttled',
+        'quota_reset',
         'suspended_reason',
         'labels',
         'dns_override',
@@ -76,6 +82,10 @@ class ServiceUser extends Model
             'logging_override' => 'boolean',
             'expires_at' => 'datetime',
             'quota_started_at' => 'datetime',
+            'quota_action' => QuotaAction::class,
+            'quota_throttle_kbps' => 'integer',
+            'quota_throttled' => 'boolean',
+            'quota_reset' => QuotaReset::class,
             'labels' => 'array',
             'dns_override' => 'array',
             'rate_limit_kbps' => 'integer',
@@ -281,6 +291,64 @@ class ServiceUser extends Model
         }
 
         return min(1.0, $this->dataUsedBytes() / $this->data_limit_bytes);
+    }
+
+    /**
+     * The speed cap actually in force for this user, in kbit/s, or null for no
+     * cap. Normally the explicit speed limit; while throttled for exhausting the
+     * allowance it is the throttle rate, and when both apply the lower of the
+     * two wins -- a throttle must never hand back more speed than the standing
+     * limit, nor a standing limit undo the throttle. TrafficShaper reads this.
+     */
+    public function effectiveRateLimitKbps(): ?int
+    {
+        if ($this->quota_throttled && $this->quota_throttle_kbps !== null) {
+            return $this->rate_limit_kbps === null
+                ? $this->quota_throttle_kbps
+                : min($this->rate_limit_kbps, $this->quota_throttle_kbps);
+        }
+
+        return $this->rate_limit_kbps;
+    }
+
+    /**
+     * The moment this user's allowance window should roll forward to, or null
+     * when no automatic reset is due (no cadence, no allowance, no start date,
+     * or the current period has not elapsed yet). Whole periods that passed
+     * while nothing ran are collapsed into one hop, so the returned start is the
+     * most recent period boundary at or before $now -- never a future date.
+     */
+    public function dueQuotaReset(?Carbon $now = null): ?Carbon
+    {
+        if ($this->quota_reset === null
+            || $this->quota_reset === QuotaReset::None
+            || $this->quota_started_at === null
+            || $this->data_limit_bytes === null) {
+            return null;
+        }
+
+        $now ??= Carbon::now();
+        $next = $this->addQuotaCadence($this->quota_started_at);
+
+        if ($next->greaterThan($now)) {
+            return null;
+        }
+
+        while ($this->addQuotaCadence($next)->lessThanOrEqualTo($now)) {
+            $next = $this->addQuotaCadence($next);
+        }
+
+        return $next;
+    }
+
+    private function addQuotaCadence(Carbon $from): Carbon
+    {
+        return match ($this->quota_reset) {
+            QuotaReset::Weekly => $from->copy()->addWeek(),
+            // No-overflow so 31 Jan + 1 month lands on 28/29 Feb, not 3 Mar.
+            QuotaReset::Monthly => $from->copy()->addMonthNoOverflow(),
+            default => $from->copy(),
+        };
     }
 
     /**

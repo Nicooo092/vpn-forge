@@ -51,6 +51,7 @@ class ServerHealthStats extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-signal'),
             $this->workerStat($s['worker']),
             $this->failedJobsStat($s['failed_jobs']),
+            $this->heartbeatStat($s['heartbeat_external']),
             Stat::make(__('Traffic (24h)'), $this->formatBytes($s['bandwidth_24h']))
                 ->description(__('last 24 hours'))
                 ->descriptionIcon('heroicon-m-arrows-right-left'),
@@ -166,6 +167,23 @@ class ServerHealthStats extends StatsOverviewWidget
             ->description($count === 0 ? __('none') : __('need attention'))
             ->descriptionIcon('heroicon-m-exclamation-triangle')
             ->color($count === 0 ? 'success' : 'danger');
+    }
+
+    /**
+     * Whether the off-host heartbeat is wired up. Read-only and non-alarming:
+     * grey "Off" when unset (a valid choice), green "Configured" when a URL is
+     * present. The URL itself is never shown -- it is the only secret involved.
+     *
+     * @param  array{configured: bool}  $hb
+     */
+    private function heartbeatStat(array $hb): Stat
+    {
+        $configured = $hb['configured'];
+
+        return Stat::make(__('External heartbeat'), $configured ? __('Configured') : __('Off'))
+            ->description($configured ? __('pinged off-host') : __('not set'))
+            ->descriptionIcon('heroicon-m-heart')
+            ->color($configured ? 'success' : 'gray');
     }
 
     /**

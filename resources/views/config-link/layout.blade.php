@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
          leak: no referer on any navigation, and no indexing. --}}
     <meta name="referrer" content="no-referrer">
     <meta name="robots" content="noindex, nofollow">
-    <title>@yield('title', 'VPN configuration')</title>
+    <title>@yield('title', __('VPN configuration'))</title>
     {{-- Everything is inline. The page can hold a private key, so it must not
          pull a single external resource whose request would carry the token in
          its Referer header. --}}

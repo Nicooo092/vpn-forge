@@ -2,8 +2,11 @@
 
 namespace App\Filament\Resources\Services\Schemas;
 
+use App\Enums\QuotaAction;
+use App\Enums\QuotaReset;
 use App\Enums\VpnProtocol;
 use App\Models\Service;
+use App\Models\ServiceUserTemplate;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -11,6 +14,7 @@ use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\TimePicker;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Carbon;
 
@@ -26,6 +30,31 @@ class ServiceUserForm
         // ignored, and the fields stop laying out two-then-one with an empty
         // half beside the last of them.
         return $schema->columns(1)->components([
+            // Pure create-form convenience: pick a saved profile and its
+            // defaults drop into the fields below. Stored nowhere on the user
+            // (dehydrated(false)) and hidden on edit -- it seeds a new user and
+            // nothing more, so a template and the users made from it stay
+            // independent. Hidden entirely until at least one template exists.
+            Select::make('apply_template')
+                ->label(__('Apply template'))
+                ->placeholder(__('Start from a saved profile (optional)'))
+                ->options(fn () => ServiceUserTemplate::orderBy('name')->pluck('name', 'id'))
+                ->dehydrated(false)
+                ->live()
+                ->visible(fn (string $operation) => $operation === 'create' && ServiceUserTemplate::exists())
+                ->afterStateUpdated(function ($state, Set $set): void {
+                    $template = filled($state) ? ServiceUserTemplate::find($state) : null;
+
+                    if ($template === null) {
+                        return;
+                    }
+
+                    foreach (self::formStateFromTemplate($template) as $field => $value) {
+                        $set($field, $value);
+                    }
+                })
+                ->helperText(__('Fills the fields below from a saved profile. You can still change anything before saving.')),
+
             TextInput::make('name')
                 ->required()
                 ->maxLength(255)
@@ -105,6 +134,37 @@ class ServiceUserForm
                 ->helperText(__('Move this forward to reset the allowance without deleting any history.'))
                 ->visible(fn (Get $get) => filled($get('data_limit_bytes'))),
 
+            Select::make('quota_reset')
+                ->label(__('Automatic reset'))
+                ->options(QuotaReset::class)
+                ->default(QuotaReset::None->value)
+                ->selectablePlaceholder(false)
+                ->helperText(__('Moves the allowance start date forward on its own, so usage counts from zero again each period without deleting any history.'))
+                ->visible(fn (Get $get) => filled($get('data_limit_bytes'))),
+
+            Select::make('quota_action')
+                ->label(__('On reaching the allowance'))
+                ->options(QuotaAction::class)
+                ->default(QuotaAction::Suspend->value)
+                ->selectablePlaceholder(false)
+                ->live()
+                ->helperText(__('What happens when the allowance is used up. Suspend cuts the user off; throttle keeps them connected but slows them to the speed below.'))
+                ->visible(fn (Get $get) => filled($get('data_limit_bytes'))),
+
+            // Stored as kbit/s, shown in Mbit/s -- same convention as the speed
+            // limit above. Only relevant, and only shown, when the action is
+            // throttle.
+            TextInput::make('quota_throttle_kbps')
+                ->label(__('Throttle speed (Mbit/s)'))
+                ->numeric()
+                ->minValue(0.1)
+                ->step(0.1)
+                ->required(fn (Get $get) => self::isThrottle($get('quota_action')))
+                ->formatStateUsing(fn (?int $state) => $state === null ? null : round($state / 1000, 2))
+                ->dehydrateStateUsing(fn (?string $state) => filled($state) ? (int) round((float) $state * 1000) : null)
+                ->helperText(__('The speed the user is capped to once over their allowance. Applied on the server within a few seconds; lifted automatically when the allowance resets.'))
+                ->visible(fn (Get $get) => filled($get('data_limit_bytes')) && self::isThrottle($get('quota_action'))),
+
             CheckboxList::make('access_days')
                 ->label(__('Access days'))
                 ->options([
@@ -148,6 +208,39 @@ class ServiceUserForm
                 ->visible($service->protocol === VpnProtocol::OpenVpn)
                 ->helperText(__('Left empty, no cap. Caps how many devices may use this one config at the same time. Needs "Allow duplicate connections" on the service to permit more than one at all; the excess newest connections are dropped.')),
         ]);
+    }
+
+    /**
+     * Maps a saved template onto the create form's field state, expressed in
+     * the units the fields display (Mbit/s, GB, HH:MM, the logging select's
+     * '' / '1' / '0' tri-state) rather than the canonical units the columns
+     * store. Pure and public so the mapping can be asserted directly in a test.
+     *
+     * @return array<string, mixed>
+     */
+    public static function formStateFromTemplate(ServiceUserTemplate $template): array
+    {
+        return [
+            'logging_override' => match ($template->logging_override) {
+                true => '1',
+                false => '0',
+                default => '',
+            },
+            'labels' => $template->labels ?? [],
+            'dns_override' => $template->dns_override ?? [],
+            'rate_limit_kbps' => $template->rate_limit_kbps === null ? null : round($template->rate_limit_kbps / 1000, 2),
+            'data_limit_bytes' => $template->data_limit_bytes === null ? null : round($template->data_limit_bytes / 1024 ** 3, 2),
+            'access_days' => $template->access_days ?? [],
+            'access_start_minute' => self::minutesToTime($template->access_start_minute),
+            'access_end_minute' => self::minutesToTime($template->access_end_minute),
+        ];
+    }
+
+    // Get may hand back either the enum instance (record fill) or its scalar
+    // value (live change), so accept both.
+    private static function isThrottle(mixed $action): bool
+    {
+        return $action === QuotaAction::Throttle || $action === QuotaAction::Throttle->value;
     }
 
     private static function minutesToTime(?int $minute): ?string

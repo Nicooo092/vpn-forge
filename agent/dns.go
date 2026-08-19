@@ -27,6 +27,12 @@ var (
 	dnsQueryPart  = regexp.MustCompile(`^query\[([^\]]+)\]\s+(\S+)\s+from\s+(\S+)`)
 	dnsForwarded  = regexp.MustCompile(`^forwarded\s+(\S+)\s+to\s+(\S+)`)
 	dnsAnswer     = regexp.MustCompile(`^(reply|cached)\s+(\S+)\s+is\s+(.+)$`)
+	// dnsmasq answers a blocked name itself instead of forwarding it: a
+	// per-service address=/name/ logs "config <name> is NXDOMAIN", and a
+	// 0.0.0.0 entry in the addn-hosts blocklist logs "<hostsfile> <name> is
+	// 0.0.0.0" (or "::" for an AAAA query). The source is never the network,
+	// so these are exactly the lines that mark a lookup as blocked.
+	dnsBlocked = regexp.MustCompile(`^(?:config|/\S+)\s+\S+\s+is\s+(?:NXDOMAIN|0\.0\.0\.0|::)$`)
 )
 
 // How long a lookup is held open waiting for further lines before being
@@ -42,6 +48,7 @@ type dnsTransaction struct {
 	answers     []string
 	aliases     []string
 	cached      bool
+	blocked     bool
 	lastSeen    time.Time
 }
 
@@ -100,6 +107,12 @@ func (c *dnsCorrelator) handleLine(line string, now time.Time) {
 
 	if m := dnsForwarded.FindStringSubmatch(rest); m != nil {
 		tx.forwardedTo = appendUnique(tx.forwardedTo, m[2])
+
+		return
+	}
+
+	if dnsBlocked.MatchString(rest) {
+		tx.blocked = true
 
 		return
 	}
@@ -177,6 +190,7 @@ func (c *dnsCorrelator) flush(tx *dnsTransaction) {
 		OccurredAt:    time.Now().UTC(),
 		SourceIP:      tx.clientIP,
 		Host:          tx.name,
+		Blocked:       boolFlag(tx.blocked),
 		Detail:        detail,
 	})
 }

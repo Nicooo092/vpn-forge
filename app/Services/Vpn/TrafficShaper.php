@@ -4,6 +4,7 @@ namespace App\Services\Vpn;
 
 use App\Enums\ServiceUserStatus;
 use App\Models\Service;
+use App\Models\ServiceUser;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use RuntimeException;
@@ -60,11 +61,19 @@ class TrafficShaper
             $this->cmd(['ip', 'link', 'del', $ifb], allowFail: true),
         ];
 
+        // A user is shaped if they carry an explicit speed limit OR are
+        // currently throttled for exhausting their allowance.
+        // effectiveRateLimitKbps() resolves which rate wins (the lower of the
+        // two) and returns null when neither applies, so filter those back out.
         $limited = $service->serviceUsers()
             ->where('status', ServiceUserStatus::Active)
-            ->whereNotNull('rate_limit_kbps')
+            ->where(fn ($query) => $query
+                ->whereNotNull('rate_limit_kbps')
+                ->orWhere('quota_throttled', true))
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(fn (ServiceUser $user) => $user->effectiveRateLimitKbps() !== null)
+            ->values();
 
         if ($limited->isEmpty()) {
             return $plan;
@@ -91,7 +100,7 @@ class TrafficShaper
 
         foreach ($limited as $user) {
             $ip = NetworkInput::assertTunnelIp($user->tunnel_ip);
-            $rate = $this->assertRate((int) $user->rate_limit_kbps);
+            $rate = $this->assertRate((int) $user->effectiveRateLimitKbps());
             $classid = '1:'.$minor;
 
             // Download: cap traffic destined for this client on the interface.

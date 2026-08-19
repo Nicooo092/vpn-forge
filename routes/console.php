@@ -7,6 +7,7 @@ use App\Jobs\Vpn\EnforceAccessWindows;
 use App\Jobs\Vpn\EnforceDeviceLimits;
 use App\Jobs\Vpn\EnforceUserLimits;
 use App\Jobs\Vpn\PollAllServiceStatuses;
+use App\Jobs\Vpn\ResetUserQuotas;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -35,6 +36,16 @@ Schedule::command('logs:prune')->daily();
 
 // Disk-space heads-up (deduped to at most once a day inside the job).
 Schedule::job(new CheckSystemHealth)->hourly()->onOneServer();
+
+// Roll per-user allowance windows forward on their weekly/monthly cadence,
+// lifting any quota throttle/suspension. Hourly is ample (boundaries are
+// day-granular) and cheap: it only touches users whose period has elapsed.
+Schedule::job(new ResetUserQuotas)->hourly()->onOneServer();
+
+// External heartbeat: pinged from the SCHEDULER (www-data), never the worker --
+// the whole point is that a dead worker (which stops all internal alerting) is
+// still noticed off-host. No-op unless VPNFORGE_HEARTBEAT_URL is set.
+Schedule::command('vpnforge:heartbeat')->everyFiveMinutes()->onOneServer();
 
 // Automatic backups. Cadence is config-driven (VPNFORGE_BACKUP_SCHEDULE);
 // 'off' schedules nothing. Retention and offsite upload happen inside the job.

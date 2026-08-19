@@ -97,4 +97,55 @@ return [
         'offsite_disk' => env('VPNFORGE_BACKUP_OFFSITE_DISK'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Expiry alerting
+    |--------------------------------------------------------------------------
+    |
+    | How many days ahead of a user's expires_at to raise a one-off operator
+    | "expiring soon" alert (de-duplicated per user per expiry). Set to 0 to
+    | disable expiry warnings entirely. Operator-side only.
+    |
+    */
+
+    'expiry' => [
+        'warn_days' => (int) env('VPNFORGE_EXPIRY_WARN_DAYS', 3),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | External heartbeat
+    |--------------------------------------------------------------------------
+    |
+    | A dead man's switch. When `url` is set the scheduler (www-data, not the
+    | worker) pings it on a schedule -- e.g. a healthchecks.io or Uptime Kuma
+    | push URL -- so a fully-dead box, where the worker and thus every internal
+    | alert are down, is still detected off-host. Empty disables it. The URL is
+    | the only secret involved. `include_status` appends a compact, user-free
+    | status query (active/total services, worker heartbeat age) to each ping.
+    |
+    */
+
+    'heartbeat' => [
+        'url' => env('VPNFORGE_HEARTBEAT_URL'),
+        'include_status' => (bool) env('VPNFORGE_HEARTBEAT_STATUS', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | DNS blocking dashboard
+    |--------------------------------------------------------------------------
+    |
+    | The blocking dashboard rolls up DNS traffic_logs over a 24h/7d window --
+    | range scans over a large, insert-heavy table -- so results are cached for
+    | `cache_ttl` seconds; the numbers barely move in between. `top_limit` caps
+    | how many blocked domains the top-blocked table lists.
+    |
+    */
+
+    'blocking' => [
+        'cache_ttl' => (int) env('VPNFORGE_BLOCKING_CACHE_TTL', 60),
+        'top_limit' => (int) env('VPNFORGE_BLOCKING_TOP_LIMIT', 10),
+    ],
+
 ];

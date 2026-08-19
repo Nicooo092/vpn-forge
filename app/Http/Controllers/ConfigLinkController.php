@@ -75,6 +75,7 @@ class ConfigLinkController extends Controller
             'contents' => $file->contents,
             'downloadUri' => 'data:application/octet-stream;base64,'.base64_encode($file->contents),
             'qrDataUri' => $isWireGuard ? $this->qrDataUri($file->contents) : null,
+            'isWireGuard' => $isWireGuard,
         ]));
     }
 
@@ -86,11 +87,11 @@ class ConfigLinkController extends Controller
     private function deadLinkResponse(?ConfigLink $link): Response
     {
         $reason = match (true) {
-            $link === null => 'This link is not valid.',
-            $link->isRevoked() => 'This link has been cancelled.',
-            $link->isExpired() => 'This link has expired.',
-            $link->isExhausted() => 'This link has already been used.',
-            default => 'This link is no longer available.',
+            $link === null => __('This link is not valid.'),
+            $link->isRevoked() => __('This link has been cancelled.'),
+            $link->isExpired() => __('This link has expired.'),
+            $link->isExhausted() => __('This link has already been used.'),
+            default => __('This link is no longer available.'),
         };
 
         return $this->harden(response()->view('config-link.expired', ['reason' => $reason]), status: 410);

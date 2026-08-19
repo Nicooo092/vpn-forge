@@ -7,6 +7,7 @@ use App\Models\Blocklist;
 use App\Models\NotificationChannel;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use App\Models\ServiceUserTemplate;
 use App\Models\User;
 use App\Observers\ServiceObserver;
 use App\Policies\AdminIpRulePolicy;
@@ -14,6 +15,7 @@ use App\Policies\BlocklistPolicy;
 use App\Policies\NotificationChannelPolicy;
 use App\Policies\ServicePolicy;
 use App\Policies\ServiceUserPolicy;
+use App\Policies\ServiceUserTemplatePolicy;
 use App\Policies\UserPolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -50,5 +52,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Blocklist::class, BlocklistPolicy::class);
         Gate::policy(NotificationChannel::class, NotificationChannelPolicy::class);
         Gate::policy(AdminIpRule::class, AdminIpRulePolicy::class);
+        Gate::policy(ServiceUserTemplate::class, ServiceUserTemplatePolicy::class);
     }
 }

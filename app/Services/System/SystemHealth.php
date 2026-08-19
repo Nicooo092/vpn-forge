@@ -33,6 +33,7 @@ class SystemHealth
             'bandwidth_24h' => $this->bandwidth24h(),
             'worker' => $this->worker(),
             'failed_jobs' => (int) DB::table('failed_jobs')->count(),
+            'heartbeat_external' => $this->heartbeatExternal(),
         ];
     }
 
@@ -56,6 +57,18 @@ class SystemHealth
         // The poller runs every minute; a few minutes without one means it has
         // stopped rather than merely being between ticks.
         return ['last_run' => (int) $last, 'age_seconds' => $age, 'healthy' => $age <= 180];
+    }
+
+    /**
+     * Whether an external heartbeat URL is configured. The scheduler pings it
+     * off-host so a fully-dead box -- worker down, internal alerting silent --
+     * is still noticed. This reports configuration only, never the URL itself.
+     *
+     * @return array{configured: bool}
+     */
+    private function heartbeatExternal(): array
+    {
+        return ['configured' => trim((string) config('vpnforge.heartbeat.url', '')) !== ''];
     }
 
     /**

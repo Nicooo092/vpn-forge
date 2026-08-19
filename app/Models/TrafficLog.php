@@ -19,6 +19,7 @@ class TrafficLog extends Model
         'occurred_at',
         'source_ip',
         'host',
+        'blocked',
         'detail',
     ];
 
@@ -27,6 +28,7 @@ class TrafficLog extends Model
         return [
             'kind' => TrafficLogKind::class,
             'occurred_at' => 'datetime',
+            'blocked' => 'boolean',
             'detail' => 'array',
         ];
     }

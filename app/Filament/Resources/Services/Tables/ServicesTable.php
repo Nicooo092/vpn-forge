@@ -4,10 +4,13 @@ namespace App\Filament\Resources\Services\Tables;
 
 use App\Enums\ServiceStatus;
 use App\Enums\VpnProtocol;
+use App\Filament\Resources\Services\Pages\CreateService;
+use App\Filament\Resources\Services\ServiceResource;
 use App\Jobs\Vpn\ProvisionService;
 use App\Jobs\Vpn\RemoveService;
 use App\Models\Service;
 use App\Services\Vpn\ConnectivityCheck;
+use App\Services\Vpn\ServiceDefinition;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -89,6 +92,32 @@ class ServicesTable
             ->recordActions([
                 ActionGroup::make([
                     EditAction::make(),
+                    // Duplicate a service into the create form, pre-filled with
+                    // fresh, non-colliding network details and the source's
+                    // non-secret settings. Server keys/PKI are never copied --
+                    // the driver mints new ones at provisioning time, keyed off
+                    // the new interface_name.
+                    Action::make('clone')
+                        ->label(__('Clone'))
+                        ->icon('heroicon-o-document-duplicate')
+                        ->action(function (Service $record) {
+                            session()->put(
+                                CreateService::CLONE_SESSION_KEY,
+                                app(ServiceDefinition::class)->cloneFormState($record),
+                            );
+
+                            return redirect(ServiceResource::getUrl('create'));
+                        }),
+                    // Download the service's non-secret definition as JSON.
+                    // Server key material never leaves the panel -- see
+                    // ServiceDefinition::secretConfig().
+                    Action::make('export')
+                        ->label(__('Export'))
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->action(fn (Service $record) => response()->streamDownload(
+                            fn () => print (app(ServiceDefinition::class)->exportJson($record)),
+                            "vpnforge-service-{$record->interface_name}.json",
+                        )),
                     Action::make('test')
                         ->label(__('Test connection'))
                         ->icon('heroicon-o-signal')

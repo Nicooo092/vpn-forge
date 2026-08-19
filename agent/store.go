@@ -36,6 +36,7 @@ type TrafficLogRow struct {
 	OccurredAt    time.Time
 	SourceIP      string
 	Host          string
+	Blocked       sql.NullBool // NULL for kinds the flag doesn't apply to (HTTP).
 	Detail        map[string]any
 }
 
@@ -173,8 +174,8 @@ func (s *Store) flush(batch []TrafficLogRow) {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO traffic_logs (service_id, service_user_id, kind, occurred_at, source_ip, host, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO traffic_logs (service_id, service_user_id, kind, occurred_at, source_ip, host, blocked, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		log.Printf("store: failed to prepare insert: %v", err)
@@ -192,7 +193,7 @@ func (s *Store) flush(batch []TrafficLogRow) {
 			continue
 		}
 
-		if _, err := stmt.Exec(row.ServiceID, row.ServiceUserID, row.Kind, row.OccurredAt, row.SourceIP, row.Host, detailJSON); err != nil {
+		if _, err := stmt.Exec(row.ServiceID, row.ServiceUserID, row.Kind, row.OccurredAt, row.SourceIP, row.Host, row.Blocked, detailJSON); err != nil {
 			log.Printf("store: failed to insert traffic log row: %v", err)
 		}
 	}

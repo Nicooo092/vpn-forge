@@ -50,6 +50,7 @@ no account required. Everything it does happens on your server.
 - [Manual installation](#manual-installation)
 - [Troubleshooting](#troubleshooting)
 - [Privacy notes](#privacy-notes)
+- [Uninstalling](#uninstalling)
 - [Scope](#scope)
 - [License](#license)
 
@@ -820,12 +821,36 @@ not cover. The change history records who turned it on.
 
 ---
 
+## Uninstalling
+
+To remove vpn-forge from a server, run the uninstaller shipped in the repo as
+root:
+
+```bash
+sudo bash /var/www/vpnforge/installer/uninstall.sh
+```
+
+It stops and disables the worker, the capture agent and every per-service unit,
+tears down each service's interface, NAT and speed-shaping rules, and removes
+the systemd units, the polkit rule, the agent binary, the nginx vhost, the
+scheduler cron line, the system users and group, and the application, key,
+config and log directories. It confirms before doing anything, asks separately
+before dropping the **database** and before deleting **/var/backups/vpnforge**
+(which holds every key on the box), and prints each step as it goes. Pass
+`--dry-run` to preview without changing anything, or `--yes` to skip the
+prompts.
+
+Installed OS packages (nginx, MariaDB, PHP, WireGuard, OpenVPN, ...) are left in
+place -- they are shared with the rest of the system, so removing them is a
+separate manual decision.
+
+---
+
 ## Scope
 
 A self-hosted tool, not a hosting platform. Deliberately out of scope for now:
 any OS other than Ubuntu 24.04 LTS, a self-service portal for end users (the
-panel is admin-only), spreading services across several machines, and an
-uninstaller.
+panel is admin-only), and spreading services across several machines.
 
 ---
 

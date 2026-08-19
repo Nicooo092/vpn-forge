@@ -15,6 +15,9 @@ enum NotificationEvent: string
     case DiskWarning = 'disk_warning';
     case NewLocation = 'new_location';
     case JobsFailed = 'jobs_failed';
+    case ExpiryApproaching = 'expiry_approaching';
+    case UserThrottled = 'user_throttled';
+    case LockdownEngaged = 'lockdown_engaged';
 
     public function label(): string
     {
@@ -26,6 +29,9 @@ enum NotificationEvent: string
             self::DiskWarning => __('Disk space runs low'),
             self::NewLocation => __('A user connects from a new network'),
             self::JobsFailed => __('A background job fails'),
+            self::ExpiryApproaching => __("A user's access is about to expire"),
+            self::UserThrottled => __('A user is auto-throttled'),
+            self::LockdownEngaged => __('The panel is locked down or lifted'),
         };
     }
 
@@ -39,6 +45,9 @@ enum NotificationEvent: string
             self::DiskWarning => "\u{1F5C4}\u{FE0F}",    // file cabinet
             self::NewLocation => "\u{1F310}",            // globe
             self::JobsFailed => "\u{1F6A8}",             // rotating light
+            self::ExpiryApproaching => "\u{23F3}",       // hourglass
+            self::UserThrottled => "\u{1F422}",          // turtle
+            self::LockdownEngaged => "\u{1F512}",        // lock
         };
     }
 
