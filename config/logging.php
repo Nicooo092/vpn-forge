@@ -63,6 +63,13 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+            // Group-writable, because the panel (www-data) and the privileged
+            // worker (vpnforge-worker) both write this file and share a group
+            // on its directory. Left at the 0644 default, whichever process
+            // creates the file first locks the other out -- and since Monolog
+            // throws when it cannot open its stream, a single failed job would
+            // take the whole worker down in a restart loop.
+            'permission' => 0664,
         ],
 
         'daily' => [
@@ -71,6 +78,8 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+            // See the 'single' channel: both accounts write this file.
+            'permission' => 0664,
         ],
 
         'slack' => [
