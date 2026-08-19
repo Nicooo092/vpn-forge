@@ -559,5 +559,15 @@
     "unknown peer": "peer sconosciuto",
     "unlimited": "illimitato",
     "via :chain": "via :chain",
-    "vpn-forge test": "test vpn-forge"
+    "vpn-forge test": "test vpn-forge",
+    "A background job fails": "Un processo in background fallisce",
+    "Failed jobs": "Processi falliti",
+    "Running": "In esecuzione",
+    "Stalled": "Fermo",
+    "Worker": "Worker",
+    "last run :s s ago": "ultima esecuzione :s s fa",
+    "need attention": "da verificare",
+    "no heartbeat for :s s": "nessun segnale da :s s",
+    "no heartbeat yet": "nessun segnale ancora",
+    "none": "nessuno"
 }
