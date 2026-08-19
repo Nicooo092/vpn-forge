@@ -33,16 +33,17 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             // A panel that can read everyone's browsing history is worth a
-            // second factor. Optional rather than enforced: turning the
-            // required flag on locks out anyone who has not set it up yet,
-            // which on a running install means locking out the only operator.
-            // Add `isRequired: true` below once every account has one.
+            // second factor. Required by default (config/vpnforge.php ->
+            // security.require_mfa): an account without it is walked through
+            // enrolment on next login rather than locked out. Set
+            // VPNFORGE_REQUIRE_MFA=false to fall back to a password alone.
             ->multiFactorAuthentication(
                 SvgAppAuthentication::make()
                     // Without recovery codes, losing the phone means losing
                     // the panel, and the only way back is editing the
                     // database by hand over SSH.
                     ->recoverable(),
+                isRequired: (bool) config('vpnforge.security.require_mfa', true),
             )
             // Where an operator sets it up, and the only page that exposes
             // those actions.

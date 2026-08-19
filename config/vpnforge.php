@@ -58,6 +58,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Security
+    |--------------------------------------------------------------------------
+    |
+    | require_mfa forces every panel account to set up two-factor authentication
+    | (they are walked through enrolment on their next login; it is not a
+    | lockout). On by default -- this panel can read everyone's browsing and its
+    | backups hold every key on the box. Set VPNFORGE_REQUIRE_MFA=false only if
+    | you have a deliberate reason to run the panel with a password alone.
+    |
+    */
+
+    'security' => [
+        'require_mfa' => (bool) env('VPNFORGE_REQUIRE_MFA', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Backups
     |--------------------------------------------------------------------------
     |
