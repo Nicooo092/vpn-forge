@@ -39,6 +39,14 @@
                             {{ $backup['name'] }}
                         </span>
 
+                        @if ($backup['encrypted'])
+                            {{-- Encrypted at rest with the operator passphrase;
+                                 restoring it needs that same passphrase. --}}
+                            <x-filament::badge color="success" icon="heroicon-o-lock-closed" class="shrink-0">
+                                {{ __('Encrypted') }}
+                            </x-filament::badge>
+                        @endif
+
                         <span class="w-20 shrink-0 whitespace-nowrap text-end text-sm tabular-nums text-gray-500 dark:text-gray-400">
                             {{ $size }}
                         </span>

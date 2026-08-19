@@ -62,7 +62,7 @@ class Backups extends Page
     }
 
     /**
-     * @return array<int, array{name: string, path: string, size: int, created_at: int}>
+     * @return array<int, array{name: string, path: string, size: int, created_at: int, encrypted: bool}>
      */
     public function getBackups(): array
     {

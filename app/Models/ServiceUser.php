@@ -41,6 +41,7 @@ class ServiceUser extends Model
     protected $fillable = [
         'service_id',
         'name',
+        'email',
         'status',
         'tunnel_ip',
         'wg_public_key',

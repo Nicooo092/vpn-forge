@@ -47,6 +47,13 @@ Schedule::job(new ResetUserQuotas)->hourly()->onOneServer();
 // still noticed off-host. No-op unless VPNFORGE_HEARTBEAT_URL is set.
 Schedule::command('vpnforge:heartbeat')->everyFiveMinutes()->onOneServer();
 
+// Monthly refresh of the optional DB-IP Lite geolocation databases. DB-IP
+// publishes new month-stamped files at the start of each month; the 3rd gives
+// them time to land. 'off' registers nothing.
+if (config('vpnforge.geoip.refresh', 'monthly') !== 'off') {
+    Schedule::command('vpnforge:geoip-refresh')->monthlyOn(3, '05:00')->onOneServer();
+}
+
 // Automatic backups. Cadence is config-driven (VPNFORGE_BACKUP_SCHEDULE);
 // 'off' schedules nothing. Retention and offsite upload happen inside the job.
 $backupCadence = config('vpnforge.backup.schedule', 'off');

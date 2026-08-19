@@ -137,6 +137,9 @@
                                     @if ($session['peer_ip'])
                                         &middot; <span class="font-mono">{{ $session['peer_ip'] }}</span>
                                     @endif
+                                    @if ($session['country'])
+                                        &middot; {{ $session['country'] }}
+                                    @endif
                                 </span>
                             </div>
                         @endforeach

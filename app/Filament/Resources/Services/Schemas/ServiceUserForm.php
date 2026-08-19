@@ -64,6 +64,12 @@ class ServiceUserForm
                 ->rule('not_regex:/[\x00-\x1f\x7f]/')
                 ->placeholder(__('phone, laptop, ...')),
 
+            TextInput::make('email')
+                ->label(__('Email (optional)'))
+                ->email()
+                ->maxLength(255)
+                ->helperText(__('If set, this person is emailed about their own account -- when their access is about to expire, or when it connects from a new network. Requires mail to be configured on the server. Nothing else is ever sent here.')),
+
             TextInput::make('tunnel_ip')
                 ->label(__('Tunnel IP'))
                 ->required()
@@ -259,7 +265,7 @@ class ServiceUserForm
         return $time->hour * 60 + $time->minute;
     }
 
-    private static function suggestNextTunnelIp(Service $service): string
+    public static function suggestNextTunnelIp(Service $service): string
     {
         $network = explode('/', $service->subnet_cidr)[0];
         $parts = array_map('intval', explode('.', $network));

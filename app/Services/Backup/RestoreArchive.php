@@ -79,14 +79,53 @@ class RestoreArchive
 
     private function extract(string $archivePath, string $dest): void
     {
+        // A .enc archive is decrypted transparently first; the plaintext .zip
+        // lives only inside the (0700) work directory and is deleted with it.
+        $zipPath = $archivePath;
+
+        if (str_ends_with($archivePath, '.enc')) {
+            $zipPath = "{$dest}/vpnforge-decrypted.zip";
+            $this->decrypt($archivePath, $zipPath);
+        }
+
         $zip = new ZipArchive;
 
-        if ($zip->open($archivePath) !== true) {
+        if ($zip->open($zipPath) !== true) {
             throw new RuntimeException('Could not open the backup archive.');
         }
 
         $zip->extractTo($dest);
         $zip->close();
+    }
+
+    /**
+     * Decrypt an encrypted archive with the operator passphrase. A wrong or
+     * absent passphrase fails loudly rather than leaving a half-restore or a
+     * silently-empty extraction: openssl exits non-zero on a bad passphrase,
+     * and a missing one is caught before it ever runs.
+     */
+    private function decrypt(string $encPath, string $zipPath): void
+    {
+        $pass = config('vpnforge.backup.passphrase');
+
+        if (blank($pass)) {
+            throw new RuntimeException(
+                'This archive is encrypted (.enc) but VPNFORGE_BACKUP_PASSPHRASE is not set. '
+                .'Set it to the passphrase the backup was made with and restore again.'
+            );
+        }
+
+        $result = Process::env([BackupArchive::PASS_ENV => (string) $pass])
+            ->run(BackupArchive::opensslCommand('decrypt', $encPath, $zipPath));
+
+        if (! $result->successful()) {
+            @unlink($zipPath);
+
+            throw new RuntimeException(
+                'Could not decrypt the backup -- check VPNFORGE_BACKUP_PASSPHRASE matches the '
+                .'passphrase the archive was made with. '.trim($result->errorOutput())
+            );
+        }
     }
 
     private function importDatabase(string $sqlPath): void

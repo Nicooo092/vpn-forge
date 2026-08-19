@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\Services\Tables;
 
+use App\Enums\QuotaAction;
 use App\Enums\ServiceUserStatus;
 use App\Enums\VpnProtocol;
+use App\Filament\Resources\Services\Schemas\ServiceUserForm;
 use App\Filament\Resources\ServiceUsers\ServiceUserResource;
 use App\Jobs\Vpn\AddServiceUser;
 use App\Jobs\Vpn\ApplyServiceConfig;
@@ -11,7 +13,9 @@ use App\Jobs\Vpn\EnforceAccessWindows;
 use App\Jobs\Vpn\RemoveServiceUser;
 use App\Jobs\Vpn\RotateUserKeys;
 use App\Models\ConfigLink;
+use App\Models\Service;
 use App\Models\ServiceUser;
+use App\Services\ServiceUsers\CsvUserImporter;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -21,8 +25,10 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
+use Filament\Resources\Pages\ManageRelatedRecords;
 use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -30,6 +36,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Throwable;
 
 class ServiceUsersTable
@@ -183,6 +190,53 @@ class ServiceUsersTable
 
                         AddServiceUser::dispatch($record);
                     }),
+                Action::make('importCsv')
+                    ->label(__('Import CSV'))
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('gray')
+                    // Bulk create is a mutation, so gate it the way every
+                    // per-user action here is gated: ->visible() hides it from
+                    // an Auditor, but Filament's mountAction checks only
+                    // isDisabled(), so ->disabled() is the guard that actually
+                    // blocks a crafted mount-by-name. The action body abort()s
+                    // as a third layer.
+                    ->visible(fn () => auth()->user()?->isAdmin() ?? false)
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
+                    ->modalHeading(__('Import users from CSV'))
+                    ->modalDescription(__('One user per line, columns: name (required), then optional label, rate_limit_kbps, data_limit_gb, expires_at, dns. A header row is optional. Blank lines are ignored and each user is given the next free tunnel address automatically.'))
+                    ->modalSubmitActionLabel(__('Import'))
+                    ->schema([
+                        FileUpload::make('csv')
+                            ->label(__('CSV file'))
+                            ->acceptedFileTypes(['text/csv', 'text/plain', 'application/vnd.ms-excel'])
+                            // Kept in the temp area and read here; never
+                            // persisted to a disk.
+                            ->storeFiles(false)
+                            ->required(),
+                    ])
+                    ->action(function (array $data, ManageRelatedRecords $livewire): void {
+                        // Server-side gate, independent of the button state.
+                        abort_unless(auth()->user()?->isAdmin() ?? false, 403);
+
+                        /** @var Service $service */
+                        $service = $livewire->getRecord();
+
+                        /** @var TemporaryUploadedFile $upload */
+                        $upload = $data['csv'];
+
+                        self::importCsv($service, (string) $upload->get());
+                    }),
+                Action::make('csvTemplate')
+                    ->label(__('CSV template'))
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('gray')
+                    ->visible(fn () => auth()->user()?->isAdmin() ?? false)
+                    ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
+                    ->action(fn () => response()->streamDownload(
+                        fn () => print (self::csvTemplateContents()),
+                        'vpnforge-users-template.csv',
+                        ['Content-Type' => 'text/csv'],
+                    )),
             ])
             // Rendered inline these overflow the row and push the telemetry
             // columns out of view -- collapse them into one dropdown.
@@ -508,6 +562,103 @@ class ServiceUsersTable
             // whole table -- allowance aggregates and all -- roughly twelve
             // times per actual change.
             ->poll('30s');
+    }
+
+    /**
+     * Creates every valid row from the uploaded CSV as a service user -- each
+     * given the next free tunnel address by the same suggestion the single-add
+     * form uses -- dispatches AddServiceUser for it exactly as the single-add
+     * flow's after() hook does, and reports a per-row created/skipped summary.
+     * The parsing and validation live in a pure service (CsvUserImporter) so
+     * they can be tested without a database; this only turns its result into
+     * rows and jobs.
+     */
+    public static function importCsv(Service $service, string $contents): void
+    {
+        $max = (int) config('vpnforge.imports.max_rows');
+        $result = app(CsvUserImporter::class)->parse($contents, $max > 0 ? $max : null);
+
+        foreach ($result->valid as $row) {
+            self::createImportedUser($service, $row);
+        }
+
+        $created = $result->createdCount();
+
+        $notification = Notification::make()
+            ->title($created === 1
+                ? __('1 user imported')
+                : __(':count users imported', ['count' => $created]));
+
+        if ($result->skippedCount() > 0) {
+            // Show the first handful of reasons so the file can be fixed; a big
+            // import with the same fault on every line does not need repeating.
+            $lines = collect($result->skipped)
+                ->take(10)
+                ->map(fn (array $r) => e(__('Line :line: :reason', ['line' => $r['line'], 'reason' => $r['reason']])))
+                ->implode('<br>');
+
+            if ($result->skippedCount() > 10) {
+                $lines .= '<br>'.e(__(':count more not shown', ['count' => $result->skippedCount() - 10]));
+            }
+
+            $notification
+                ->body(new HtmlString(
+                    '<p style="margin-bottom:.35rem">'.e(__(':count row(s) skipped:', ['count' => $result->skippedCount()])).'</p>'.$lines
+                ))
+                ->warning()
+                ->persistent();
+        } else {
+            $notification->success();
+        }
+
+        $notification->send();
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a validated row from CsvUserImporter
+     */
+    private static function createImportedUser(Service $service, array $row): void
+    {
+        $attributes = [
+            'service_id' => $service->id,
+            'name' => $row['name'],
+            'status' => ServiceUserStatus::Active,
+            // Reuse the single-add form's suggestion. Each created user is
+            // persisted before the next is suggested, so sequential rows do not
+            // collide on the same address.
+            'tunnel_ip' => ServiceUserForm::suggestNextTunnelIp($service),
+            'labels' => $row['labels'],
+            'dns_override' => $row['dns_override'],
+            'rate_limit_kbps' => $row['rate_limit_kbps'],
+            'expires_at' => $row['expires_at'],
+            'data_limit_bytes' => $row['data_limit_bytes'],
+        ];
+
+        // Mirror the create form's quota defaults so an imported allowance is
+        // actually enforced: counted from now, suspend once reached.
+        if ($row['data_limit_bytes'] !== null) {
+            $attributes['quota_started_at'] = now();
+            $attributes['quota_action'] = QuotaAction::Suspend;
+        }
+
+        $user = ServiceUser::create($attributes);
+
+        // Same as the single-add after() hook: issue keys/cert and render the
+        // client config on the privileged worker. Imported users carry no
+        // access schedule, so there is no closed-window special case here.
+        AddServiceUser::dispatch($user);
+    }
+
+    private static function csvTemplateContents(): string
+    {
+        // Header plus two example rows. rate_limit_kbps is kbit/s, data_limit_gb
+        // is GB, expires_at is any understandable date, dns is one or more IPv4
+        // resolvers separated by ";".
+        return implode("\n", [
+            'name,label,rate_limit_kbps,data_limit_gb,expires_at,dns',
+            'phone,family,,,,',
+            'laptop,work,20000,50,2026-12-31,1.1.1.1;9.9.9.9',
+        ])."\n";
     }
 
     /**

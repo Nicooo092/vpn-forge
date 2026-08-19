@@ -4,10 +4,13 @@ namespace App\Jobs\Vpn;
 
 use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
+use App\Enums\UserMailType;
+use App\Jobs\Notifications\SendUserMail;
 use App\Models\BandwidthSample;
 use App\Models\ConnectionLog;
 use App\Models\Service;
 use App\Models\ServiceUser;
+use App\Services\Geo\GeoLocator;
 use App\Services\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -94,11 +97,36 @@ class PollAllServiceStatuses implements ShouldQueue
                 // Checked before the log is written, so this connection is not
                 // yet in the user's history -- a genuinely new /24 raises an
                 // alert once.
+                // Resolve country + ASN once, here, where the session opens: it
+                // enriches the new-network alert below and is stored on the row
+                // so it survives a later database change. Null when the GeoIP
+                // databases are absent or the address is private/unknown.
+                $geo = $status->peerIp !== null
+                    ? app(GeoLocator::class)->locate($status->peerIp)
+                    : null;
+
                 if ($status->peerIp !== null && $this->isNewNetwork($user, $status->peerIp)) {
+                    $where = $geo !== null && $geo['country_name'] !== null
+                        ? ' from '.$geo['country_name'].($geo['as_org'] !== null ? " ({$geo['as_org']})" : '')
+                        : '';
+
                     app(Notifier::class)->event(
                         NotificationEvent::NewLocation,
                         "{$user->name} connected from a new network",
-                        "{$status->peerIp} (service {$service->name}).",
+                        "{$status->peerIp}{$where} (service {$service->name}).",
+                    );
+
+                    // Let the user know their own account connected from a new
+                    // network. Only the /24 travels into the email and its
+                    // de-dup key -- no exact address, no browsing detail.
+                    // isNewNetwork() already guaranteed an IPv4 peer here.
+                    $network = implode('.', array_slice(explode('.', $status->peerIp), 0, 3)).'.0/24';
+
+                    SendUserMail::dispatch(
+                        $user,
+                        UserMailType::NewDeviceLocation,
+                        "user-mail:new-location:{$user->id}:{$network}",
+                        ['network' => $network],
                     );
                 }
 
@@ -106,6 +134,10 @@ class PollAllServiceStatuses implements ShouldQueue
                     'service_user_id' => $user->id,
                     'connected_at' => $status->lastHandshakeAt ?? $now,
                     'peer_ip' => $status->peerIp,
+                    'country_code' => $geo['country_code'] ?? null,
+                    'country_name' => $geo['country_name'] ?? null,
+                    'asn' => $geo['asn'] ?? null,
+                    'as_org' => $geo['as_org'] ?? null,
                 ]);
                 $user->last_connected_at = $status->lastHandshakeAt ?? $now;
             } elseif (! $status->connected && $openLog !== null) {

@@ -6,6 +6,8 @@ use App\Enums\NotificationEvent;
 use App\Enums\QuotaAction;
 use App\Enums\ServiceStatus;
 use App\Enums\ServiceUserStatus;
+use App\Enums\UserMailType;
+use App\Jobs\Notifications\SendUserMail;
 use App\Models\Service;
 use App\Models\ServiceUser;
 use App\Services\Notifications\Notifier;
@@ -191,6 +193,15 @@ class EnforceUserLimits implements ShouldQueue
                 NotificationEvent::ExpiryApproaching,
                 "{$user->name} is expiring soon",
                 'Expires '.$user->expires_at->diffForHumans().' -- service '.$user->service->name.'.',
+            );
+
+            // Tell the user themselves, if they have an address and a real
+            // mailer is set up. Gated and de-duplicated inside the job; keyed on
+            // the same expiry timestamp so a pushed-back date re-arms it.
+            SendUserMail::dispatch(
+                $user,
+                UserMailType::AccessExpiring,
+                "user-mail:expiry:{$user->id}:".$user->expires_at->getTimestamp(),
             );
         }
     }

@@ -22,6 +22,15 @@ class BackupArchive
     public const DIRECTORY = '/var/backups/vpnforge';
 
     /**
+     * The symmetric cipher a finished archive is encrypted with at rest, and the
+     * environment variable the passphrase is handed to openssl through -- never
+     * on the command line, where `ps` would expose it to any local account.
+     */
+    public const CIPHER = 'aes-256-cbc';
+
+    public const PASS_ENV = 'VPNFORGE_BACKUP_PASS';
+
+    /**
      * @var list<string>
      */
     private const PATHS = [
@@ -79,7 +88,73 @@ class BackupArchive
         // this file contains every private key on the box.
         @chmod($path, 0640);
 
+        // With a passphrase configured, encrypt the finished archive at rest and
+        // drop the plaintext -- the encrypted .enc becomes the only thing left
+        // on disk (and the only thing uploaded offsite).
+        if ($this->passphrase() !== null) {
+            return $this->encrypt($path);
+        }
+
         return $path;
+    }
+
+    /**
+     * The operator passphrase from the environment, or null when backups are
+     * left as plaintext .zip -- the default, and backward compatible with
+     * archives made before this existed.
+     */
+    private function passphrase(): ?string
+    {
+        $pass = config('vpnforge.backup.passphrase');
+
+        return filled($pass) ? (string) $pass : null;
+    }
+
+    /**
+     * Encrypt $plaintextZip and return the path to the resulting .enc file,
+     * deleting the plaintext so no unencrypted vault is left behind. A failure
+     * here fails the whole backup: an archive the operator believes is
+     * encrypted must never silently be left in the clear.
+     */
+    private function encrypt(string $plaintextZip): string
+    {
+        $encPath = $plaintextZip.'.enc';
+
+        // The passphrase goes through the environment, not argv -- see PASS_ENV.
+        $result = Process::env([self::PASS_ENV => (string) $this->passphrase()])
+            ->run(self::opensslCommand('encrypt', $plaintextZip, $encPath));
+
+        if (! $result->successful()) {
+            @unlink($encPath);
+
+            throw new RuntimeException('Backup encryption failed: '.trim($result->errorOutput()));
+        }
+
+        File::delete($plaintextZip);
+        @chmod($encPath, 0640);
+
+        return $encPath;
+    }
+
+    /**
+     * The exact openssl invocation to encrypt or decrypt one archive. Pure --
+     * it takes and returns only strings, so the command can be asserted on in a
+     * test without a real openssl or a real secret (like TrafficShaper::plan()).
+     * The passphrase is passed through the environment (-pass env:...), never as
+     * an argv the process table would expose.
+     *
+     * @param  'encrypt'|'decrypt'  $mode
+     * @return array<int, string>
+     */
+    public static function opensslCommand(string $mode, string $in, string $out): array
+    {
+        $argv = ['openssl', 'enc', '-'.self::CIPHER, '-pbkdf2', '-salt'];
+
+        if ($mode === 'decrypt') {
+            $argv[] = '-d';
+        }
+
+        return [...$argv, '-in', $in, '-out', $out, '-pass', 'env:'.self::PASS_ENV];
     }
 
     /**
@@ -189,6 +264,14 @@ class BackupArchive
         in the clear. Store it somewhere you would store those directly, and
         delete it from the server once you have copied it off.
 
+        If it was delivered as vpnforge-<stamp>.zip.enc it is encrypted with the
+        operator passphrase (VPNFORGE_BACKUP_PASSPHRASE). Decrypt it first, with
+        the same passphrase, before doing anything below:
+          openssl enc -d -aes-256-cbc -pbkdf2 -in vpnforge-<stamp>.zip.enc \
+            -out vpnforge-<stamp>.zip
+        That passphrase lives only in .env and is NOT stored in this archive --
+        lose it and the backup is unrecoverable.
+
         To restore onto a rebuilt server:
           1. Copy `env` back to the app directory as .env (as root), keeping
              its original ownership -- APP_KEY here is what decrypts the client
@@ -202,7 +285,7 @@ class BackupArchive
     }
 
     /**
-     * @return array<int, array{name: string, path: string, size: int, created_at: int}>
+     * @return array<int, array{name: string, path: string, size: int, created_at: int, encrypted: bool}>
      */
     public function list(): array
     {
@@ -211,12 +294,14 @@ class BackupArchive
         }
 
         return collect(File::files(self::DIRECTORY))
-            ->filter(fn ($file) => $file->getExtension() === 'zip')
+            ->filter(fn ($file) => str_ends_with($file->getFilename(), '.zip')
+                || str_ends_with($file->getFilename(), '.zip.enc'))
             ->map(fn ($file) => [
                 'name' => $file->getFilename(),
                 'path' => $file->getPathname(),
                 'size' => $file->getSize(),
                 'created_at' => $file->getMTime(),
+                'encrypted' => str_ends_with($file->getFilename(), '.zip.enc'),
             ])
             ->sortByDesc('created_at')
             ->values()

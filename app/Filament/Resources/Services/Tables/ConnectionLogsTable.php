@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Services\Tables;
 
+use App\Models\ConnectionLog;
+use App\Services\Geo\GeoLocator;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -32,6 +34,29 @@ class ConnectionLogsTable
                     ->label(__('From IP'))
                     ->fontFamily('mono')
                     ->placeholder('--'),
+                // Country + ASN of the source IP. Stored on the row when the
+                // session opens (so it survives a later database change); rows
+                // recorded before the databases existed fall back to a live
+                // lookup. Empty when the databases are absent -- read-only and
+                // auditor-safe, it never blocks the table.
+                TextColumn::make('country_name')
+                    ->label(__('Country'))
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('--')
+                    ->state(function (ConnectionLog $record): ?string {
+                        $geo = self::geoState($record);
+
+                        if ($geo === null || ($geo['country_name'] === null && $geo['country_code'] === null)) {
+                            return null;
+                        }
+
+                        $name = $geo['country_name'] ?? $geo['country_code'];
+
+                        return trim(GeoLocator::flagEmoji($geo['country_code']).' '.$name);
+                    })
+                    ->description(fn (ConnectionLog $record): ?string => self::asnLabel(self::geoState($record)))
+                    ->toggleable(),
                 TextColumn::make('bytes_in')
                     ->label(__('Received'))
                     ->formatStateUsing(fn (?int $state) => self::formatBytes($state ?? 0)),
@@ -47,6 +72,41 @@ class ConnectionLogsTable
             // (routes/console.php), so anything faster than this refreshes the
             // page six times over for the same rows.
             ->poll('60s');
+    }
+
+    /**
+     * Geo (country + ASN) for a row: prefer what was captured on it when the
+     * session opened, else a live lookup for rows predating the databases. Null
+     * when nothing is known.
+     *
+     * @return array{country_code: ?string, country_name: ?string, asn: ?int, as_org: ?string}|null
+     */
+    private static function geoState(ConnectionLog $record): ?array
+    {
+        if ($record->country_code !== null || $record->asn !== null) {
+            return [
+                'country_code' => $record->country_code,
+                'country_name' => $record->country_name,
+                'asn' => $record->asn,
+                'as_org' => $record->as_org,
+            ];
+        }
+
+        return app(GeoLocator::class)->locate($record->peer_ip);
+    }
+
+    /**
+     * @param  array{country_code: ?string, country_name: ?string, asn: ?int, as_org: ?string}|null  $geo
+     */
+    private static function asnLabel(?array $geo): ?string
+    {
+        if ($geo === null || $geo['asn'] === null) {
+            return null;
+        }
+
+        return $geo['as_org'] !== null
+            ? 'AS'.$geo['asn'].' '.$geo['as_org']
+            : 'AS'.$geo['asn'];
     }
 
     private static function formatBytes(int $bytes): string

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ConfigLinkController;
+use App\Http\Controllers\MetricsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -20,3 +21,12 @@ Route::middleware('throttle:30,1')->group(function () {
         ->name('config-link.reveal')
         ->whereAlphaNumeric('token');
 });
+
+// Prometheus metrics for a monitoring scraper. Outside the Filament panel and
+// its session auth -- a scraper carries no cookie -- but MetricsController
+// requires a bearer token (constant-time compare) and 404s when none is
+// configured, so nothing is disclosed unless deliberately enabled. Rate limited
+// against token guessing, like the config-link routes.
+Route::middleware('throttle:30,1')
+    ->get('/metrics', MetricsController::class)
+    ->name('metrics');

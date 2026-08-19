@@ -95,6 +95,13 @@ return [
 
         // A filesystem disk name to also upload to, or null for local only.
         'offsite_disk' => env('VPNFORGE_BACKUP_OFFSITE_DISK'),
+
+        // A passphrase to encrypt each finished archive at rest with
+        // `openssl enc -aes-256-cbc -pbkdf2`. Empty (the default) keeps the
+        // plaintext .zip -- backward compatible. It lives ONLY here / in .env
+        // and is never written into the archive: lose it and an encrypted
+        // backup is unrecoverable.
+        'passphrase' => env('VPNFORGE_BACKUP_PASSPHRASE'),
     ],
 
     /*
@@ -146,6 +153,80 @@ return [
     'blocking' => [
         'cache_ttl' => (int) env('VPNFORGE_BLOCKING_CACHE_TTL', 60),
         'top_limit' => (int) env('VPNFORGE_BLOCKING_TOP_LIMIT', 10),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Prometheus metrics
+    |--------------------------------------------------------------------------
+    |
+    | A read-only /metrics endpoint (Prometheus format) for an external scraper.
+    | It lives outside the panel's login, so the bearer token below is its only
+    | guard: set VPNFORGE_METRICS_TOKEN to a long random string. Empty -> the
+    | endpoint returns 404 (off until deliberately enabled). Output is counts and
+    | per-service up/down only; no keys, addresses or user data.
+    |
+    */
+
+    'metrics' => [
+        'token' => env('VPNFORGE_METRICS_TOKEN'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | End-user email notifications
+    |--------------------------------------------------------------------------
+    |
+    | Emails an end user (not the operator) about their OWN account: access about
+    | to expire, or a connection from a network not seen for them before. Only
+    | sent when the user has an email set AND a real mailer is configured
+    | (MAIL_MAILER other than 'log'); degrades silently otherwise. No browsing or
+    | traffic detail is ever emailed. Set to false to turn the channel off.
+    |
+    */
+
+    'user_mail' => [
+        'enabled' => (bool) env('VPNFORGE_USER_MAIL_ENABLED', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | GeoIP enrichment (optional)
+    |--------------------------------------------------------------------------
+    |
+    | Connection logs can be annotated with the country and ASN of the client's
+    | source IP, using the free DB-IP Lite databases (CC-BY, MaxMind mmdb
+    | format). The installer downloads them to /etc/vpnforge/geoip and the
+    | scheduler refreshes them monthly. Entirely optional: with a database file
+    | absent the GeoLocator degrades to null and the country column stays empty.
+    |
+    */
+
+    'geoip' => [
+        'country_db' => env('VPNFORGE_GEOIP_COUNTRY_DB', '/etc/vpnforge/geoip/dbip-country-lite.mmdb'),
+        'asn_db' => env('VPNFORGE_GEOIP_ASN_DB', '/etc/vpnforge/geoip/dbip-asn-lite.mmdb'),
+
+        // monthly | off
+        'refresh' => env('VPNFORGE_GEOIP_REFRESH', 'monthly'),
+
+        // Where the free, month-stamped mmdb.gz files are published.
+        'download_base' => env('VPNFORGE_GEOIP_DOWNLOAD_BASE', 'https://download.db-ip.com/free'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | CSV user import
+    |--------------------------------------------------------------------------
+    |
+    | The service users table's "Import CSV" action bulk-creates users. This caps
+    | how many rows one import reads, so a huge or accidental paste cannot enqueue
+    | an unbounded number of provisioning jobs; rows beyond the cap are reported
+    | as skipped. Set to 0 for no cap.
+    |
+    */
+
+    'imports' => [
+        'max_rows' => (int) env('VPNFORGE_IMPORT_MAX_ROWS', 1000),
     ],
 
 ];

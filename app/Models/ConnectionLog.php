@@ -12,6 +12,10 @@ class ConnectionLog extends Model
         'connected_at',
         'disconnected_at',
         'peer_ip',
+        'country_code',
+        'country_name',
+        'asn',
+        'as_org',
         'bytes_in',
         'bytes_out',
     ];
@@ -21,6 +25,7 @@ class ConnectionLog extends Model
         return [
             'connected_at' => 'datetime',
             'disconnected_at' => 'datetime',
+            'asn' => 'integer',
         ];
     }
 

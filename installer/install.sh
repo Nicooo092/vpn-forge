@@ -24,6 +24,8 @@ VPNFORGE_REPO_URL="${VPNFORGE_REPO_URL:-https://github.com/Nicooo092/vpn-forge.g
 # shellcheck disable=SC1091
 . "${INSTALLER_DIR}/lib/privilege_setup.sh"
 # shellcheck disable=SC1091
+. "${INSTALLER_DIR}/lib/geoip_setup.sh"
+# shellcheck disable=SC1091
 . "${INSTALLER_DIR}/lib/capture_agent_setup.sh"
 # shellcheck disable=SC1091
 . "${INSTALLER_DIR}/lib/firewall_hint.sh"
@@ -111,6 +113,9 @@ main() {
   configure_nginx
   configure_ssl
   setup_privileged_worker
+  # Optional GeoIP databases (DB-IP Lite). Non-fatal: a failed download just
+  # leaves geo enrichment off until the monthly refresh succeeds.
+  install_geoip_databases || warning "GeoIP database download failed -- geo enrichment stays off until the monthly refresh."
   setup_capture_agent
 
   print_summary

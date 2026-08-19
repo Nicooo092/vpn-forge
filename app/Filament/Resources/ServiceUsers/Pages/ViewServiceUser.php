@@ -5,6 +5,8 @@ namespace App\Filament\Resources\ServiceUsers\Pages;
 use App\Enums\TrafficLogKind;
 use App\Filament\Resources\Services\ServiceResource;
 use App\Filament\Resources\ServiceUsers\ServiceUserResource;
+use App\Models\ConnectionLog;
+use App\Services\Geo\GeoLocator;
 use App\Services\Traffic\DomainCategory;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
@@ -72,20 +74,45 @@ class ViewServiceUser extends Page
     }
 
     /**
-     * @return array<int, array{connected_at: string, ended: string, peer_ip: ?string}>
+     * @return array<int, array{connected_at: string, ended: string, peer_ip: ?string, country: ?string}>
      */
     public function getRecentSessions(): array
     {
+        $geo = app(GeoLocator::class);
+
         return $this->record->connectionLogs()
             ->latest('connected_at')
             ->limit(10)
             ->get()
-            ->map(fn ($log) => [
+            ->map(fn (ConnectionLog $log) => [
                 'connected_at' => $log->connected_at?->toDayDateTimeString() ?? '--',
                 'ended' => $log->disconnected_at?->diffForHumans() ?? __('still connected'),
                 'peer_ip' => $log->peer_ip,
+                'country' => self::sessionCountry($log, $geo),
             ])
             ->all();
+    }
+
+    /**
+     * A flag + country label for a session: the geo stored on the row, or a live
+     * lookup for rows recorded before the databases existed. Null when unknown.
+     */
+    private static function sessionCountry(ConnectionLog $log, GeoLocator $geo): ?string
+    {
+        $name = $log->country_name;
+        $code = $log->country_code;
+
+        if ($name === null && $code === null) {
+            $resolved = $geo->locate($log->peer_ip);
+            $name = $resolved['country_name'] ?? null;
+            $code = $resolved['country_code'] ?? null;
+        }
+
+        if ($name === null && $code === null) {
+            return null;
+        }
+
+        return trim(GeoLocator::flagEmoji($code).' '.($name ?? $code));
     }
 
     public function formatBytes(int $bytes): string

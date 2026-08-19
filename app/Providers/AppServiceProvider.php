@@ -27,7 +27,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One reader per process, reused across every table row and poll -- the
+        // mmdb files are opened at most once. Degrades to a null locator when the
+        // database files are absent (see GeoLocator::fromConfig).
+        $this->app->singleton(
+            \App\Services\Geo\GeoLocator::class,
+            fn () => \App\Services\Geo\GeoLocator::fromConfig(),
+        );
     }
 
     /**

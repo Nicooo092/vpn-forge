@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Jobs\Maintenance\CreateBackup;
 use App\Services\Backup\BackupArchive;
+use App\Services\Backup\RestoreArchive;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
@@ -69,5 +70,46 @@ class BackupTest extends TestCase
         (new CreateBackup)->handle($archive);
 
         $this->assertTrue(true);
+    }
+
+    public function test_openssl_command_is_pure_and_keeps_the_passphrase_out_of_argv(): void
+    {
+        $encrypt = BackupArchive::opensslCommand('encrypt', '/b/vpnforge-x.zip', '/b/vpnforge-x.zip.enc');
+
+        $this->assertSame([
+            'openssl', 'enc', '-aes-256-cbc', '-pbkdf2', '-salt',
+            '-in', '/b/vpnforge-x.zip', '-out', '/b/vpnforge-x.zip.enc',
+            '-pass', 'env:'.BackupArchive::PASS_ENV,
+        ], $encrypt);
+
+        $decrypt = BackupArchive::opensslCommand('decrypt', '/b/vpnforge-x.zip.enc', '/b/vpnforge-x.zip');
+
+        // Decryption is the same invocation plus -d, reading the .enc.
+        $this->assertContains('-d', $decrypt);
+        $this->assertSame('/b/vpnforge-x.zip.enc', $decrypt[array_search('-in', $decrypt, true) + 1]);
+
+        // The secret is handed over through the environment, never on argv.
+        $joined = implode(' ', array_merge($encrypt, $decrypt));
+        $this->assertStringNotContainsString('pass:', $joined);
+        $this->assertStringContainsString('env:'.BackupArchive::PASS_ENV, $joined);
+    }
+
+    public function test_restoring_an_encrypted_archive_without_a_passphrase_fails_loudly(): void
+    {
+        config()->set('vpnforge.backup.passphrase', null);
+
+        // A stand-in for an encrypted archive: restore must refuse it before
+        // touching the database, not fail silently or half-restore.
+        $enc = sys_get_temp_dir().'/vpnforge-enc-test-'.uniqid().'.zip.enc';
+        File::put($enc, 'CIPHERTEXT');
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('VPNFORGE_BACKUP_PASSPHRASE');
+
+            (new RestoreArchive)->restore($enc);
+        } finally {
+            @unlink($enc);
+        }
     }
 }
