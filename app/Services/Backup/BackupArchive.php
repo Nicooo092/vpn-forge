@@ -45,6 +45,19 @@ class BackupArchive
 
         $zip->addFromString('database.sql', $this->databaseDump());
 
+        // APP_KEY decrypts the sensitive database columns -- client private
+        // keys, rendered configs, the 2FA secret and recovery codes -- which
+        // exist ONLY in encrypted form in database.sql. Without it, a restore
+        // onto a rebuilt host (where `key:generate` has run) leaves all of
+        // those permanently undecryptable. Ship the whole .env so a restore is
+        // actually complete; this archive is already a plaintext key vault, so
+        // it adds no exposure it did not already carry.
+        $envPath = base_path('.env');
+
+        if (File::exists($envPath)) {
+            $zip->addFromString('env', File::get($envPath));
+        }
+
         $skipped = [];
 
         foreach (self::PATHS as $source) {
@@ -166,18 +179,25 @@ class BackupArchive
 
         Contents:
           database.sql            full dump of the panel database
+          env                      the .env file, including APP_KEY
           etc/wireguard/          server keys and peer lists
           etc/openvpn/vpnforge/   the certificate authority, server and client
                                   certificates, and the revocation list
           etc/vpnforge/           dnsmasq configuration and the agent config
 
-        This archive contains private keys and the database password in the
-        clear. Store it somewhere you would store those directly, and delete
-        it from the server once you have copied it off.
+        This archive contains private keys, APP_KEY and the database password
+        in the clear. Store it somewhere you would store those directly, and
+        delete it from the server once you have copied it off.
 
-        To restore: put the directories back where they came from with their
-        original ownership, import database.sql, then re-run provisioning for
-        each service from the panel.
+        To restore onto a rebuilt server:
+          1. Copy `env` back to the app directory as .env (as root), keeping
+             its original ownership -- APP_KEY here is what decrypts the client
+             private keys, rendered configs and 2FA secrets held in the
+             database. A fresh key:generate would make all of those unreadable.
+          2. Put the etc/ directories back where they came from with their
+             original ownership.
+          3. Import database.sql.
+          4. Re-run provisioning for each service from the panel.
         TXT;
     }
 

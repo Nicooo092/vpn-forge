@@ -40,6 +40,14 @@ install_app() {
   ensure_env_key .env SESSION_DRIVER database
   ensure_env_key .env QUEUE_CONNECTION database
 
+  # Automatic daily backups of the database and every key on the box, keeping
+  # the newest 7. Defaults to 'off' in config, which means a fresh install
+  # would otherwise never back itself up. Each archive contains all private
+  # key material, so set VPNFORGE_BACKUP_OFFSITE_DISK to also stream it to an
+  # S3-compatible store once you have one configured.
+  ensure_env_key .env VPNFORGE_BACKUP_SCHEDULE daily
+  ensure_env_key .env VPNFORGE_BACKUP_KEEP 7
+
   # Mark the session cookie Secure whenever the panel is served over HTTPS, so
   # the browser never sends it back over a plain-HTTP request. On a bare-IP
   # HTTP install this stays false, since a Secure cookie the browser refuses to
