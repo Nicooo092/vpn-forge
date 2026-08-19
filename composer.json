@@ -1,9 +1,9 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "nicooo092/vpn-forge",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "Self-hosted WireGuard and OpenVPN control panel with per-user limits, DNS visibility and backups.",
+    "keywords": ["vpn", "wireguard", "openvpn", "self-hosted", "laravel", "filament"],
     "license": "MIT",
     "require": {
         "php": "^8.3",

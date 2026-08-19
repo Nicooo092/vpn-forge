@@ -282,6 +282,10 @@ curl -fsSL https://raw.githubusercontent.com/Nicooo092/vpn-forge/main/install.sh
 You are asked for a domain (or IP), an admin account, and whether to enable
 Let's Encrypt. Everything else -- nginx, MariaDB, PHP, WireGuard, OpenVPN, the
 privileged worker, the capture agent -- is installed and started for you.
+Automatic **daily backups are enabled by default**; review them on the Backups
+page and, once you have somewhere to put them, set an offsite target
+(`VPNFORGE_BACKUP_OFFSITE_DISK`). A backup holds every key on the box -- keep it
+private.
 
 Then open the panel, create a service, add a user, and scan the QR code.
 
@@ -340,14 +344,13 @@ Being precise about how much is actually translated (two layers):
 
 | Layer | Coverage |
 |---|---|
-| **Framework interface** — every button, menu control, form field, validation message, table control, modal, pagination and empty state | **100%** in all six languages (Filament's community-maintained locale files) |
-| **vpn-forge's own text** — the navigation and page titles | translated in all six; that is **~15 of roughly 300** app-defined strings, so about **5%** |
-| **vpn-forge's own in-page text** — the ~300 help texts, notification messages, section headings and field labels it adds | still English for now, shown via fallback |
+| **Framework interface** — every button, menu control, form field, validation message, table control, modal, pagination and empty state | **100%** in all five non-English languages (Filament's community-maintained locale files) |
+| **vpn-forge's own text** — its navigation, page titles, help texts, notification messages, section headings and field labels | **~560 strings each**, in perfect key parity across `fr`, `es`, `de`, `it` and `pt` (`lang/<code>.json`) — effectively all of the panel's own copy |
 
-So the great majority of what you *click* is localised (it comes from the
-framework), while most of vpn-forge's own explanatory text is not yet — that is
-the honest picture. Deepening it is just more entries in `lang/<code>.json`; the
-machinery is in place.
+English is the base language: it is the source string itself, so there is no
+`lang/en.json`. The one surface still English-only in every language is the
+**public one-time config-link page** a recipient opens to collect their config
+(`resources/views/config-link/*`); the admin panel itself is fully localised.
 
 ---
 
@@ -826,6 +829,19 @@ uninstaller.
 
 ---
 
+## Project documents
+
+- [PRIVACY.md](PRIVACY.md) — what the panel can record, retention, and your
+  responsibilities if you run it for other people.
+- [TERMS.md](TERMS.md) — terms for the software, plus an acceptable-use template
+  you can adapt for your own users.
+- [SECURITY.md](SECURITY.md) — the privilege model, how to deploy safely, and how
+  to report a vulnerability.
+- [NOTICE.md](NOTICE.md) — third-party software and licences.
+- [CREDITS.md](CREDITS.md) — author and acknowledgements.
+
 ## License
 
 [MIT](LICENSE). Use it, change it, run it commercially, fork it. No warranty.
+See [NOTICE.md](NOTICE.md) for third-party licences (note: Dompdf is LGPL-2.1 and
+GSAP ships under GreenSock's own licence, not MIT).
