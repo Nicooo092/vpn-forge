@@ -26,6 +26,7 @@ class ManageAdminIpRules extends ManageRecords
                 ->label(__('Allow my current IP'))
                 ->icon('heroicon-o-plus')
                 ->color('gray')
+                ->visible(fn () => auth()->user()?->isAdmin() ?? false)
                 ->action(function (): void {
                     $ip = request()->ip();
 

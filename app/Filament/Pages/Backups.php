@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\GuardsAdminActions;
 use App\Jobs\Maintenance\CreateBackup;
 use App\Jobs\Maintenance\RestoreBackup;
 use App\Services\Backup\BackupArchive;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\File;
 
 class Backups extends Page
 {
+    use GuardsAdminActions;
+
     protected string $view = 'filament.pages.backups';
 
     protected static ?int $navigationSort = 90;
@@ -39,6 +42,7 @@ class Backups extends Page
             Action::make('create')
                 ->label(__('Create backup'))
                 ->icon('heroicon-o-plus')
+                ->visible(static::adminOnly())
                 ->requiresConfirmation()
                 ->modalDescription(__('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background on the privileged worker.'))
                 // The archive is written by a queued job, so it does not exist
@@ -72,6 +76,10 @@ class Backups extends Page
 
     public function download(string $name): mixed
     {
+        // The archive is a plaintext vault of every key on the box; extracting
+        // it is admin-only, not merely read.
+        $this->abortUnlessAdmin();
+
         $path = $this->resolve($name);
 
         if ($path === null) {
@@ -85,6 +93,8 @@ class Backups extends Page
 
     public function delete(string $name): void
     {
+        $this->abortUnlessAdmin();
+
         $path = $this->resolve($name);
 
         if ($path !== null) {
@@ -102,6 +112,10 @@ class Backups extends Page
      */
     public function restore(string $name): void
     {
+        // Restore overwrites the live database and all key material -- the most
+        // destructive thing the panel can do. Admin-only, guarded server-side.
+        $this->abortUnlessAdmin();
+
         $path = $this->resolve($name);
 
         if ($path === null) {

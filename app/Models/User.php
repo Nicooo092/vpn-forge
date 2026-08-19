@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\UserRole;
 use Database\Factories\UserFactory;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
@@ -15,7 +16,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use SensitiveParameter;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token', 'app_authentication_secret', 'app_authentication_recovery_codes'])]
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
@@ -39,6 +40,35 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     }
 
     /**
+     * Admin can change anything; Auditor is read-only (see UserRole). Any
+     * gate/policy check goes through here, and Gate::before short-circuits
+     * every ability to true for an admin (AppServiceProvider).
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === UserRole::Admin;
+    }
+
+    public function isAuditor(): bool
+    {
+        return $this->role === UserRole::Auditor;
+    }
+
+    /**
+     * How many admins exist. Used to refuse the last admin being demoted or
+     * deleted, which would leave the panel with no one able to change anything.
+     */
+    public static function adminCount(): int
+    {
+        return static::query()->where('role', UserRole::Admin->value)->count();
+    }
+
+    public function isLastAdmin(): bool
+    {
+        return $this->isAdmin() && static::adminCount() <= 1;
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -47,6 +77,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     {
         return [
             'email_verified_at' => 'datetime',
+            'role' => UserRole::class,
             'password' => 'hashed',
             // Not hashed, because verifying a code needs the original value
             // back -- so encrypted at rest instead, behind APP_KEY.

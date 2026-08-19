@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\Users;
 
+use App\Enums\UserRole;
 use App\Filament\Resources\Users\Pages\ManageUsers;
 use App\Models\User;
 use BackedEnum;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -59,6 +61,18 @@ class UserResource extends Resource
                 ->unique(ignoreRecord: true)
                 ->maxLength(255),
 
+            Select::make('role')
+                ->label(__('Role'))
+                ->options(UserRole::options())
+                ->default(UserRole::Admin->value)
+                ->required()
+                ->selectablePlaceholder(false)
+                // The last admin cannot be demoted to auditor -- that would
+                // leave the panel with no one able to change anything.
+                ->disabled(fn (?User $record) => $record?->isLastAdmin() ?? false)
+                ->dehydrated()
+                ->helperText(__('Auditor can see everything, including the traffic logs, but cannot change anything.')),
+
             TextInput::make('password')
                 ->password()
                 ->revealable()
@@ -91,6 +105,10 @@ class UserResource extends Resource
                     ->label(__('Email address'))
                     ->searchable()
                     ->copyable(),
+                TextColumn::make('role')
+                    ->label(__('Role'))
+                    ->badge()
+                    ->color(fn (UserRole $state) => $state === UserRole::Admin ? 'primary' : 'gray'),
                 TextColumn::make('created_at')
                     ->label(__('Added'))
                     ->since()

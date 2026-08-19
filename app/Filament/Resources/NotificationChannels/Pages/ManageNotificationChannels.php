@@ -34,6 +34,7 @@ class ManageNotificationChannels extends ManageRecords
                 Action::make('test')
                     ->label(__('Send test'))
                     ->icon('heroicon-o-paper-airplane')
+                    ->visible(fn () => auth()->user()?->isAdmin() ?? false)
                     ->action(function (NotificationChannel $record): void {
                         try {
                             app(TransportFactory::class)

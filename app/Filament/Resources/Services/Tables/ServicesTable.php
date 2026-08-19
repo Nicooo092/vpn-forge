@@ -143,7 +143,10 @@ class ServicesTable
                                 ->success()
                                 ->send();
                         }),
-                ]),
+                ])
+                    // Edit/retry/remove all change the service; admin-only. An
+                    // Auditor sees the services list read-only.
+                    ->visible(fn () => auth()->user()?->isAdmin()),
             ])
             ->emptyStateIcon('heroicon-o-shield-check')
             ->emptyStateHeading(__('No VPN services yet'))

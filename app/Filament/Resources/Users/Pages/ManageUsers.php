@@ -27,10 +27,10 @@ class ManageUsers extends ManageRecords
             ->recordActions([
                 EditAction::make(),
                 DeleteAction::make()
-                    // Deleting the only account locks everyone out of the
-                    // panel permanently -- the sole way back in is to create
-                    // one over SSH.
-                    ->hidden(fn (User $record) => User::count() <= 1)
+                    // Deleting the only account -- or the last admin -- locks
+                    // everyone out of the panel (or out of every control),
+                    // and the sole way back is creating one over SSH.
+                    ->hidden(fn (User $record) => User::count() <= 1 || $record->isLastAdmin())
                     ->modalDescription(fn (User $record) => $record->is(auth()->user())
                         ? __('This is the account you are signed in with. Deleting it signs you out immediately.')
                         : null),

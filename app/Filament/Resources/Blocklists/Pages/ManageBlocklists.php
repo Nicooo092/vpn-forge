@@ -29,6 +29,7 @@ class ManageBlocklists extends ManageRecords
                 ->label(__('Refresh now'))
                 ->icon('heroicon-o-arrow-path')
                 ->color('gray')
+                ->visible(fn () => auth()->user()?->isAdmin() ?? false)
                 ->action(fn () => $this->recompile(__('Refreshing blocklists'))),
         ];
     }

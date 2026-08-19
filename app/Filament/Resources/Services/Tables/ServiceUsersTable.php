@@ -458,7 +458,11 @@ class ServiceUsersTable
                         }),
                     DeleteAction::make()
                         ->visible(fn (ServiceUser $record) => $record->status === ServiceUserStatus::Revoked),
-                ]),
+                ])
+                    // Every per-user action either mutates the user or reveals
+                    // key material, so the whole group is admin-only. An Auditor
+                    // still sees the table (read-only), just no action menu.
+                    ->visible(fn () => auth()->user()?->isAdmin()),
             ])
             ->filters([
                 SelectFilter::make('status')
