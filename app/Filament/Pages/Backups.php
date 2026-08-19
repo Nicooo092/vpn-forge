@@ -43,6 +43,11 @@ class Backups extends Page
                 ->label(__('Create backup'))
                 ->icon('heroicon-o-plus')
                 ->visible(static::adminOnly())
+                // ->visible hides the button, but Filament's mountAction checks
+                // isDisabled(), not isVisible() -- so ->disabled() plus the
+                // server-side guard below are what actually stop an auditor
+                // mounting this by name to dispatch the key-vault backup job.
+                ->disabled(fn () => ! (auth()->user()?->isAdmin() ?? false))
                 ->requiresConfirmation()
                 ->modalDescription(__('Dumps the database and copies the WireGuard keys, the OpenVPN certificate authority and the service configuration into one archive. It runs in the background on the privileged worker.'))
                 // The archive is written by a queued job, so it does not exist
@@ -50,6 +55,8 @@ class Backups extends Page
                 // Saying so beats promising a list that never updates on its
                 // own.
                 ->action(function (): void {
+                    $this->abortUnlessAdmin();
+
                     CreateBackup::dispatch();
 
                     Notification::make()

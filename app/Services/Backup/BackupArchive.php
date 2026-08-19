@@ -126,6 +126,10 @@ class BackupArchive
 
         if (! $result->successful()) {
             @unlink($encPath);
+            // Also remove the plaintext: with a passphrase configured, an
+            // archive the operator believes is encrypted must never be left in
+            // the clear on disk -- fail the backup, but leave no cleartext vault.
+            File::delete($plaintextZip);
 
             throw new RuntimeException('Backup encryption failed: '.trim($result->errorOutput()));
         }
@@ -181,12 +185,16 @@ class BackupArchive
             self::EXCLUDED_TABLES,
         );
 
-        $result = Process::run([
+        // The password goes through MYSQL_PWD, not --password on argv: /proc/pid/
+        // environ is readable only by the process owner and root, whereas argv
+        // (cmdline) is world-readable, so this keeps the DB credential out of
+        // `ps` for every other local account -- the same discipline encrypt()
+        // uses for the backup passphrase.
+        $result = Process::env(['MYSQL_PWD' => (string) config('database.connections.mariadb.password')])->run([
             'mysqldump',
             '--host='.config('database.connections.mariadb.host'),
             '--port='.config('database.connections.mariadb.port'),
             '--user='.config('database.connections.mariadb.username'),
-            '--password='.config('database.connections.mariadb.password'),
             '--single-transaction',
             '--no-tablespaces',
             ...$ignore,

@@ -140,15 +140,18 @@ class RestoreArchive
             throw new RuntimeException('Could not read the database dump.');
         }
 
-        // Streamed to mysql's stdin so a large dump is not read into memory.
-        $result = Process::input($handle)->run([
-            'mysql',
-            '--host='.config('database.connections.mariadb.host'),
-            '--port='.config('database.connections.mariadb.port'),
-            '--user='.config('database.connections.mariadb.username'),
-            '--password='.config('database.connections.mariadb.password'),
-            config('database.connections.mariadb.database'),
-        ]);
+        // Password via MYSQL_PWD, not --password on argv (world-readable in
+        // /proc/pid/cmdline), matching BackupArchive::databaseDump. Streamed to
+        // mysql's stdin so a large dump is not read into memory.
+        $result = Process::input($handle)
+            ->env(['MYSQL_PWD' => (string) config('database.connections.mariadb.password')])
+            ->run([
+                'mysql',
+                '--host='.config('database.connections.mariadb.host'),
+                '--port='.config('database.connections.mariadb.port'),
+                '--user='.config('database.connections.mariadb.username'),
+                config('database.connections.mariadb.database'),
+            ]);
 
         if (! $result->successful()) {
             throw new RuntimeException('Database import failed: '.trim($result->errorOutput()));
