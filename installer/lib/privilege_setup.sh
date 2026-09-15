@@ -91,6 +91,14 @@ setup_privileged_worker() {
   usermod -aG vpnforge-shared vpnforge-worker
   usermod -aG vpnforge-shared www-data
 
+  # .env holds the database password and APP_KEY. install_app() already made
+  # the whole app directory root-owned and world-readable -- this narrows
+  # .env specifically to root plus the one group both runtime processes are
+  # in, now that vpnforge-shared exists (it does not yet when install_app()
+  # runs). 640, not 644: nothing else on the box should be able to read it.
+  chown root:vpnforge-shared "${APP_DIR}/.env"
+  chmod 640 "${APP_DIR}/.env"
+
   # Backups: written by the worker (the only account that can read the
   # OpenVPN CA), downloaded through the panel. 2770 because the contents are
   # every private key on the machine, setgid so archives inherit the group

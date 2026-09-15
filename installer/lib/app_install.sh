@@ -70,8 +70,21 @@ install_app() {
   php artisan make:filament-user --name="${ADMIN_USERNAME}" --email="${ADMIN_EMAIL}" --password="${ADMIN_PASSWORD}"
 
   output "Setting file permissions..."
-  chmod -R 755 "$APP_DIR"/storage/* "$APP_DIR"/bootstrap/cache/
-  chown -R www-data:www-data "$APP_DIR"
+  # The application code (app/, vendor/, config/, routes/, public/build, ...)
+  # is root-owned and merely world-readable, never www-data-writable. Both
+  # www-data (serving the panel) and vpnforge-worker (running `artisan
+  # queue:work` with CAP_NET_ADMIN -- see setup_privileged_worker) load this
+  # same code, so if it were web-writable, a compromise of the panel process
+  # alone would let an attacker plant a class the privileged worker then
+  # executes on its next boot: an app-level bug turning into full network
+  # control. Only storage/ is genuine runtime state (cache, sessions, views,
+  # logs, generated backups) and needs to stay writable -- by www-data, the
+  # only process that writes it in normal operation.
+  chown -R root:root "$APP_DIR"
+  find "$APP_DIR" -type d -exec chmod 755 {} +
+  find "$APP_DIR" -type f -exec chmod 644 {} +
+  chown -R www-data:www-data "$APP_DIR"/storage
+  chmod -R 775 "$APP_DIR"/storage
 
   output "Installing the scheduler cron job..."
   local cron_line="* * * * * php ${APP_DIR}/artisan schedule:run >> /dev/null 2>&1"
