@@ -257,6 +257,13 @@ function startReveal(run) {
     let guard = 0
     let veil = null
 
+    /* The clip's Web Animations handle. `fill: 'forwards'` keeps an Animation
+       alive in the document after it finishes, so it has to be cancelled by
+       hand in settle() -- the pseudo-element it targeted is torn down with the
+       transition, but the filled Animation itself is not guaranteed to go with
+       it, and one would otherwise be leaked per toggle. */
+    let clipAnim = null
+
     const commit = () => {
         if (committed) {
             return
@@ -293,6 +300,19 @@ function startReveal(run) {
         }
 
         style.textContent = ''
+
+        if (clipAnim) {
+            // By now the pseudo tree is gone; cancelling a filled Animation on
+            // a torn-down target is exactly the case engines disagree on, so
+            // the call is hedged rather than trusted.
+            try {
+                clipAnim.cancel()
+            } catch (error) {
+                // Nothing to do: the animation is unreachable either way.
+            }
+
+            clipAnim = null
+        }
 
         if (veil) {
             veil.remove()
@@ -331,13 +351,20 @@ function startReveal(run) {
         if (transition) {
             transition.ready
                 .then(() => {
+                    // A settle that beat this promise -- the wall-clock failsafe
+                    // on a stalled engine -- has already cleaned up; an
+                    // Animation created now would be the one nothing cancels.
+                    if (settled) {
+                        return
+                    }
+
                     /* The pseudo-element cannot be tweened by GSAP, so the
                        clip runs on the Web Animations API instead -- against the
                        same bezier the rest of the panel uses. `fill: forwards`
                        holds it open, otherwise it would snap back to the CSS
                        `circle(0px)` for the frame between this animation ending
                        and the pseudo-elements being torn down. */
-                    document.documentElement.animate(
+                    clipAnim = document.documentElement.animate(
                         {
                             clipPath: [
                                 `circle(0px at ${point.x}px ${point.y}px)`,

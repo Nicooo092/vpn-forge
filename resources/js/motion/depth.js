@@ -130,7 +130,7 @@ export function depthLayer({ gsap, MOTION }) {
     // Heal whatever the previous run left behind before building anything. The
     // runtime's context.revert() undoes our tweens, but the vanishing point is a
     // raw style assignment and is ours alone to remove.
-    healAll()
+    healAll(gsap)
 
     /*
      * The governor's verdict, read defensively -- this module has to work
@@ -269,8 +269,11 @@ export function depthLayer({ gsap, MOTION }) {
         const cached = rigs.get(card)
 
         // A poll can re-render a card's contents while leaving the card itself
-        // in place, which would leave the rig driving detached nodes.
-        if (cached && cached.length && cached[0].el.isConnected) {
+        // in place, which would leave the rig driving detached nodes. Every
+        // plane is checked, not just the first: a morph can swap the label or
+        // description while keeping the value node, and a rig is only as
+        // valid as its most recently replaced plane.
+        if (cached && cached.length && cached.every((plane) => plane.el.isConnected)) {
             return cached
         }
 
@@ -355,7 +358,7 @@ export function depthLayer({ gsap, MOTION }) {
         owned(() =>
             gsap.delayedCall(FOLLOW_FAST + FOLLOW_SPREAD + 0.15, () => {
                 if (card !== hotCard) {
-                    heal(rig.map((plane) => plane.el))
+                    heal(rig.map((plane) => plane.el), gsap)
                 }
             }),
         )
@@ -580,7 +583,15 @@ export function depthLayer({ gsap, MOTION }) {
         stopWatch()
 
         if (!animate) {
-            healAll()
+            /* healAll kills any plane tween still in flight -- and a killed
+               quickTo can never be driven again, so the hot card's rig must be
+               rebuilt from scratch on the next engage rather than reused from
+               cache with dead drivers. */
+            if (card) {
+                rigs.delete(card)
+            }
+
+            healAll(gsap)
 
             return
         }
@@ -610,7 +621,7 @@ export function depthLayer({ gsap, MOTION }) {
 
                     cards.forEach((other) => {
                         if (other !== hotCard) {
-                            heal([other])
+                            heal([other], gsap)
                         }
                     })
                 }),
@@ -919,8 +930,10 @@ function isHovered(element) {
  * to avoid.
  *
  * @param {Iterable<Element>} elements
+ * @param {?object} gsap  the caller's GSAP, so a plane's in-flight tween can be
+ *                        killed before its inline residue is stripped
  */
-function heal(elements) {
+function heal(elements, gsap) {
     Array.prototype.forEach.call(elements, (element) => {
         if (!element || !element.style) {
             return
@@ -935,6 +948,16 @@ function heal(elements) {
             return
         }
 
+        /* Kill before stripping. A focus or plane tween still in flight would
+           re-write transform/opacity on its next tick -- after the mark that
+           lets a later sweep find this element is already gone, leaving
+           residue nothing can ever heal. Killing is safe mid-revert, unlike
+           creating a tween. Cards are exempt above on purpose: the only
+           tweens on a card belong to interactions.js. */
+        if (gsap) {
+            gsap.killTweensOf(element)
+        }
+
         element.style.removeProperty('transform')
         element.style.removeProperty('opacity')
         element.style.removeProperty('will-change')
@@ -943,6 +966,6 @@ function heal(elements) {
 }
 
 /** Every element this module has touched, anywhere on the page. */
-function healAll() {
-    heal(document.querySelectorAll(`[${OWNED_ATTR}]`))
+function healAll(gsap) {
+    heal(document.querySelectorAll(`[${OWNED_ATTR}]`), gsap)
 }

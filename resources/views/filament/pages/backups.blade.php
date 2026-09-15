@@ -32,7 +32,12 @@
                         ? number_format($backup['size'] / 1024 / 1024, 1) . ' MB'
                         : number_format($backup['size'] / 1024, 1) . ' KB')
 
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-3 py-3 first:pt-0 last:pb-0">
+                    {{-- Keyed by archive name (unique on disk) so Livewire's
+                         morph matches rows by identity, not position: after a
+                         delete or create the list shifts, and positional
+                         matching could hand one row's element state (focus,
+                         in-flight transitions) to a different archive. --}}
+                    <div wire:key="backup-{{ $backup['name'] }}" class="flex flex-wrap items-center gap-x-4 gap-y-3 py-3 first:pt-0 last:pb-0">
                         <x-filament::icon icon="heroicon-o-archive-box" class="shrink-0 text-gray-400" />
 
                         <span class="min-w-0 flex-1 truncate font-medium text-gray-950 dark:text-white">

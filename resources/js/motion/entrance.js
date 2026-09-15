@@ -38,6 +38,22 @@
  */
 let hasBooted = false
 
+/*
+ * Wall-clock failsafe owned by the current run (text.js keeps the same
+ * discipline for its splits). Every from-state this module writes is undone
+ * only by per-tween clearProps -- so a timeline that never advances (a starved
+ * ticker, a kill without a context revert) leaves sections fully clipped and
+ * cards transparent, with their CSS transitions still suppressed. motion.js's
+ * rescue sweep cannot be relied on to catch that: it only touches elements
+ * whose inline style mentions `opacity`, so a state stuck at clipPath or
+ * transform alone slips through, and its clearProps list never restores
+ * animation/transition. The failsafe must therefore live here, where the full
+ * set of touched elements is known, and it must run on window.setTimeout --
+ * if gsap's ticker is the thing that stopped, a ticker-driven rescue would
+ * never arrive either.
+ */
+let failsafeTimer = 0
+
 /* Filament's sidebar breakpoint (Tailwind `lg`). Below it the sidebar is an
    off-canvas drawer and the top bar carries the navigation, so the chrome
    phases have nothing visible to move. */
@@ -62,6 +78,14 @@ function spread(amount, ease) {
 export function entrance({ gsap, MOTION }) {
     const cold = !hasBooted
     hasBooted = true
+
+    /* The previous run's failsafe holds references to a body that has just
+       been swapped out; firing it would be dead work at best. Each run owns
+       exactly one. */
+    if (failsafeTimer) {
+        window.clearTimeout(failsafeTimer)
+        failsafeTimer = 0
+    }
 
     /*
      * A plain media query read, not gsap.matchMedia(). matchMedia's value is
@@ -122,7 +146,14 @@ export function entrance({ gsap, MOTION }) {
      * the stylesheet.
      */
     const RELEASE = 'animation,transition,willChange,transform,transformOrigin'
+
+    /* Everything the sequence touches goes through release(), so collecting
+       here is what gives the failsafe a complete target list -- an element the
+       failsafe does not know about is an element it cannot put back. */
+    const touched = []
+
     function release(els) {
+        touched.push(...(Array.isArray(els) ? els : [els]))
         tl.set(els, { animation: 'none', transition: 'none' }, 0)
     }
 
@@ -431,6 +462,14 @@ export function entrance({ gsap, MOTION }) {
                 duration: 0.42 * d,
                 ease: MOTION.easeSoft,
                 stagger: spread(0.14 * d),
+                /* This tween owns opacity, so it must hand it back itself --
+                   the sibling transform tween's RELEASE list does not include
+                   opacity, and a stale inline `opacity: 1` outranks every
+                   later stylesheet state and churns Livewire's morph diff.
+                   Safe to clear here: this tween (0.42d) finishes before the
+                   transform tween (0.7d), both starting at P.body with the
+                   same stagger distribution. */
+                clearProps: 'opacity',
             },
             P.body,
         )
@@ -466,6 +505,10 @@ export function entrance({ gsap, MOTION }) {
                 duration: 0.4 * d,
                 ease: MOTION.easeSoft,
                 stagger: spread(0.16 * d),
+                /* Same discipline as the stat cards above: opacity is this
+                   tween's to clear, and its 0.4d finishes inside the wipe
+                   tween's 0.66d, so the clip-path clearProps never races it. */
+                clearProps: 'opacity',
             },
             P.body,
         )
@@ -488,6 +531,26 @@ export function entrance({ gsap, MOTION }) {
             },
             P.body,
         )
+    }
+
+    /*
+     * Arm the failsafe (see the module-level note). Half a second past the
+     * timeline's own end is enough slack that a healthy run always disarms it
+     * first; a run that never completes gets every touched element handed back
+     * to the stylesheet in one sweep. The list is the union of everything any
+     * tween above clears -- opacity and clipPath for the from-states, filter
+     * for the heading's blur, RELEASE for the transforms and the suppressed
+     * CSS transitions -- because the failsafe cannot know which tween stalled.
+     * clearProps on an element already at rest is a no-op, so over-clearing
+     * costs nothing.
+     */
+    if (touched.length) {
+        const timer = window.setTimeout(() => {
+            gsap.set(touched, { clearProps: `opacity,clipPath,filter,${RELEASE}` })
+        }, (tl.duration() + 0.5) * 1000)
+
+        failsafeTimer = timer
+        tl.eventCallback('onComplete', () => window.clearTimeout(timer))
     }
 
     return tl

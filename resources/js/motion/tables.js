@@ -900,6 +900,18 @@ function livewireBridge(api, scope, gestures, input) {
     // the page transition.
     scope.on(document, 'livewire:navigating', () => {
         document.querySelectorAll(`[${BUSY_ATTR}]`).forEach((node) => node.removeAttribute(BUSY_ATTR))
+
+        // Livewire snapshots the outgoing page during this event for its
+        // back/forward restore, and a pagination lead-out caught mid-flight
+        // would bake its inline dim and shift into that snapshot -- the clone
+        // Livewire restores on Back is fresh DOM that no guard, clearProps or
+        // teardown of ours ever reaches. Cleared here, the snapshot holds
+        // exactly what the server rendered.
+        const bodies = document.querySelectorAll('.fi-ta-content, .fi-ta-table tbody')
+
+        if (bodies.length) {
+            api.gsap.set(bodies, { clearProps: 'opacity,transform,willChange' })
+        }
     })
 }
 

@@ -623,9 +623,11 @@ function colourOf(badge) {
  * the words Provisioning, Active or Actif.
  */
 function watchBadges({ MOTION, scope, stage, rich }) {
-    const roots = document.querySelectorAll('.fi-ta')
-
-    if (!roots.length) {
+    /* Table roots are resolved fresh on every scan rather than captured here:
+       Livewire can replace a `.fi-ta` root wholesale (a wire:key change, a
+       conditional tab), and a NodeList held from boot would keep reading --
+       and pinning in memory -- subtrees that are no longer in the document. */
+    if (!document.querySelector('.fi-ta')) {
         return
     }
 
@@ -701,11 +703,9 @@ function watchBadges({ MOTION, scope, stage, rich }) {
     function scan() {
         let winner = null
 
-        for (const root of roots) {
-            if (!root.isConnected) {
-                continue
-            }
-
+        // A fresh query only ever returns connected roots, so a table that was
+        // just swapped in is seeded on this very scan.
+        for (const root of document.querySelectorAll('.fi-ta')) {
             for (const row of root.querySelectorAll('.fi-ta-table tbody .fi-ta-row')) {
                 if (row.classList.contains('fi-ta-group-header-row')) {
                     continue
@@ -790,20 +790,51 @@ function watchBadges({ MOTION, scope, stage, rich }) {
         }, SCAN_DELAY)
     }
 
-    /* One observer for every table on the page. `attributeFilter` keeps it
-       quiet, and it is also what stops the observer feeding itself: this
-       module's marks are data attributes and its writes are inline styles, so
-       neither can wake it. */
-    const observer = new MutationObserver(schedule)
+    /* Does this mutation reach into a table -- or carry one in or out? A
+       record's target is the PARENT of an added node, so a table being swapped
+       in wholesale arrives on a target OUTSIDE any `.fi-ta`; the added nodes
+       have to be inspected themselves or the replacement table would never be
+       seeded. A removed table needs no scan: there is nothing left to mark. */
+    const touchesTable = (record) => {
+        const target = record.target
 
-    roots.forEach((root) =>
-        observer.observe(root, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class'],
-        }),
-    )
+        if (target.nodeType === 1 && target.closest && target.closest('.fi-ta')) {
+            return true
+        }
+
+        for (const node of record.addedNodes) {
+            if (
+                node.nodeType === 1 &&
+                (node.matches('.fi-ta') || node.querySelector('.fi-ta'))
+            ) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /* One observer on the body rather than one per table root. A table root is
+       exactly the node Livewire can replace wholesale, and an observer bound
+       to the old node would keep watching a detached subtree while its
+       replacement changed unseen -- the body outlives every morph.
+       `attributeFilter` keeps it quiet, and it is also what stops the observer
+       feeding itself: this module's marks are data attributes and its writes
+       are inline styles, so neither can wake it. The filter above then keeps
+       the wider net from scheduling scans for mutations no table was part
+       of. */
+    const observer = new MutationObserver((records) => {
+        if (records.some(touchesTable)) {
+            schedule()
+        }
+    })
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class'],
+    })
 
     scope.add(() => observer.disconnect())
 }

@@ -428,6 +428,19 @@ export function navigation({ gsap, MOTION }) {
        read while the sidebar is still in its old state. */
     let pending = null
 
+    /* True for exactly as long as a Flip owns the icons' transforms. `pending`
+       cannot stand in for this: onSidebarToggled nulls it before reflowIcons
+       runs, so during the entire Flip both hover handlers would see nothing in
+       flight -- and a collapse shrinks the rail out from under the cursor,
+       firing pointerleave mid-Flip. Cleared in the Flip's own onComplete, whose
+       clearProps also wipes any lean this flag made the handlers skip. */
+    let flipActive = false
+
+    /* The exit's put-the-text-back timer, kept so a toggle can disarm it. Its
+       one job is the pointerdown whose click never arrives; once the class has
+       actually flipped, the toggle handler owns the labels. */
+    let exitFailsafe = null
+
     const mainContainer = () => document.querySelector('.fi-main-ctn')
 
     const captureState = () => {
@@ -486,9 +499,14 @@ export function navigation({ gsap, MOTION }) {
 
         // The click may never come: a press that drags off the button, a
         // context menu, a tab away mid-press. Nothing else would ever put this
-        // text back.
-        owned(() =>
+        // text back. Held in `exitFailsafe` so a toggle can disarm it -- it
+        // exists only for the click that never lands, and left armed it would
+        // outlive a collapse into the next expand, where at t=0.7s its
+        // restoreNavText(true) would overwrite the enter cascade mid-stagger.
+        exitFailsafe = owned(() =>
             gsap.delayedCall(0.7, () => {
+                exitFailsafe = null
+
                 if (isOpen()) {
                     restoreNavText(true)
                 }
@@ -586,6 +604,8 @@ export function navigation({ gsap, MOTION }) {
             return
         }
 
+        flipActive = true
+
         owned(() =>
             Flip.from(from.icons, {
                 duration: MOTION.base * 0.8,
@@ -600,8 +620,10 @@ export function navigation({ gsap, MOTION }) {
                 scale: true,
                 // Icons carry no controls, and the transform is gone the moment
                 // the tween ends, so nothing here can anchor a modal.
-                onComplete: () =>
-                    gsap.set(alive, { clearProps: 'transform,transformOrigin,willChange' }),
+                onComplete: () => {
+                    flipActive = false
+                    gsap.set(alive, { clearProps: 'transform,transformOrigin,willChange' })
+                },
             }),
         )
     }
@@ -629,6 +651,15 @@ export function navigation({ gsap, MOTION }) {
     const onSidebarToggled = (open) => {
         const from = pending
         pending = null
+
+        // The class has flipped, so the click the failsafe was insuring against
+        // did arrive. Both branches below already put the labels where this
+        // toggle needs them; the timer firing on top of that at t=0.7s would
+        // only ever interrupt them.
+        if (exitFailsafe) {
+            exitFailsafe.kill()
+            exitFailsafe = null
+        }
 
         if (!isDesktop()) {
             drawer(open)
@@ -982,11 +1013,17 @@ export function navigation({ gsap, MOTION }) {
                 'pointerenter',
                 () => {
                     // Mid-collapse the icons belong to Flip; a second tween on
-                    // the same transform would fight it. `pending` is checked by
-                    // age as well as existence -- a click that toggled nothing
-                    // leaves one behind, and it must not disable the hover for
-                    // the rest of the page's life.
-                    if (isOpen() || (pending && performance.now() - pending.at < STATE_MAX_AGE)) {
+                    // the same transform would fight it. `flipActive` covers the
+                    // Flip itself, `pending` the gap between click and class
+                    // mutation -- and pending is checked by age as well as
+                    // existence, because a click that toggled nothing leaves one
+                    // behind, and it must not disable the hover for the rest of
+                    // the page's life.
+                    if (
+                        isOpen() ||
+                        flipActive ||
+                        (pending && performance.now() - pending.at < STATE_MAX_AGE)
+                    ) {
                         return
                     }
 
@@ -1018,7 +1055,15 @@ export function navigation({ gsap, MOTION }) {
                         }),
                     )
 
-                    lean(0)
+                    // The edge fade above always runs -- it targets the sidebar,
+                    // not the icons. The settle does not: mid-Flip its overwrite
+                    // would kill the payoff's x channel and its clearProps would
+                    // wipe the transform under the still-running tween. The
+                    // Flip's own onComplete clearProps ends up settling the
+                    // icons instead.
+                    if (!flipActive) {
+                        lean(0)
+                    }
                 },
                 { passive: true },
             )

@@ -123,10 +123,25 @@ const ENTRANCE_SETTLED = 1.4
 let context = null
 
 /**
+ * Disposers handed back by modules. context.revert() unwinds everything GSAP
+ * created, but it cannot reach a raw document/window listener or observer a
+ * module attached -- only the module knows about those, so it returns a
+ * teardown function and the runtime is responsible for calling it before the
+ * context itself goes away.
+ */
+let cleanups = []
+
+/**
  * Incremented on every boot, so work scheduled by a previous run can tell that
  * it has been superseded and quietly do nothing.
  */
 let generation = 0
+
+/**
+ * When the current run booted, so morph-driven work can tell whether the
+ * arrival sequence might still be holding elements off their resting position.
+ */
+let bootedAt = 0
 
 function prefersReducedMotion() {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -153,6 +168,19 @@ function motionDisabled() {
 }
 
 function teardown() {
+    // Module disposers first, newest to oldest: a raw listener may itself own
+    // tweens or triggers, and it has to be gone before the context they lived
+    // in is unwound. Each runs isolated -- one broken disposer must not leave
+    // every listener behind it alive.
+    cleanups.reverse().forEach((cleanup) => {
+        try {
+            cleanup()
+        } catch (error) {
+            console.warn('[vpn-forge motion] module cleanup failed', error)
+        }
+    })
+    cleanups = []
+
     // ScrollTriggers are registered globally, not on the context, so they have
     // to be killed by hand or every navigation leaves its set behind.
     ScrollTrigger.getAll().forEach((trigger) => trigger.kill())
@@ -177,6 +205,13 @@ const RESCUE = [
     '.fi-wi',
     '.fi-header',
     '.fi-main > *',
+    // The page container itself: a transform stuck here scales the whole
+    // screen and becomes a containing block for every fixed and absolute
+    // descendant, so it is content-critical even though it carries none.
+    '.fi-main',
+    // Filament teleports modals to <body>, outside .fi-main entirely -- the
+    // window is the piece whose stuck opacity or scale leaves a dialog blank.
+    '.fi-modal-window',
 ].join(', ')
 
 /**
@@ -197,7 +232,10 @@ function rescueHiddenContent() {
 
         const style = element.getAttribute('style')
 
-        if (!style || !style.includes('opacity')) {
+        // Anything a killed tween can leave behind counts, not just a fade: a
+        // transform-only residue (the whole-screen-zoom shape) is stuck motion
+        // state exactly as much as a card parked at opacity 0.
+        if (!style || !/opacity|transform|translate|scale|rotate|filter|clip/.test(style)) {
             return
         }
 
@@ -207,7 +245,11 @@ function rescueHiddenContent() {
             return
         }
 
-        if (Number(getComputedStyle(element).opacity) >= 0.99) {
+        const computed = getComputedStyle(element)
+
+        // Fully visible is not the same as fully at rest: an element that is
+        // opaque but still scaled or translated needs its transform cleared.
+        if (Number(computed.opacity) >= 0.99 && computed.transform === 'none') {
             return
         }
 
@@ -218,7 +260,9 @@ function rescueHiddenContent() {
 }
 
 function sweepAt(delayMs, run) {
-    window.setTimeout(() => {
+    // The timer id is returned so a caller that reschedules (the morph-driven
+    // sweep below) can cancel the pass it is replacing.
+    return window.setTimeout(() => {
         if (run !== generation) {
             return
         }
@@ -231,7 +275,28 @@ function sweepAt(delayMs, run) {
     }, delayMs)
 }
 
+/*
+ * The boot-time sweeps only watch the first few seconds of a page's life, but
+ * Livewire can morph the DOM at any time -- a modal action or a poll can kill a
+ * module's tween mid-flight and strand its start state long after those sweeps
+ * have come and gone. So every burst of morphs earns one more rescue pass,
+ * debounced past the point where any morph-reactive animation should have
+ * finished, and generation-guarded like every other scheduled sweep.
+ */
+let morphSweepTimer = 0
+
+function queueMorphSweep() {
+    window.clearTimeout(morphSweepTimer)
+    morphSweepTimer = sweepAt(1500, generation)
+}
+
 function boot() {
+    // Superseding the previous run has to happen before anything else: even a
+    // boot that goes on to start nothing (reduced motion, kill switch) must
+    // invalidate the sweeps and refreshes the run before it left scheduled, or
+    // they fire against the page teardown() is about to strip.
+    generation += 1
+
     teardown()
 
     // With reduced motion requested -- or motion switched off outright -- the
@@ -244,7 +309,14 @@ function boot() {
     context = gsap.context(() => {
         MODULES.forEach((module) => {
             try {
-                module({ gsap, ScrollTrigger, MOTION })
+                // A module may hand back a disposer for anything revert()
+                // cannot reach -- raw listeners, observers. teardown() owns
+                // calling it.
+                const cleanup = module({ gsap, ScrollTrigger, MOTION })
+
+                if (typeof cleanup === 'function') {
+                    cleanups.push(cleanup)
+                }
             } catch (error) {
                 // One failing module must not take the rest of the panel's
                 // motion with it -- and must never break the page itself.
@@ -267,7 +339,9 @@ function boot() {
     // after the context closed, so a revert cannot cancel them, and a refresh
     // firing against a torn-down page would resurrect measurements for triggers
     // that no longer exist.
-    const run = ++generation
+    const run = generation
+
+    bootedAt = performance.now()
 
     requestAnimationFrame(() => {
         if (run === generation) {
@@ -305,9 +379,18 @@ function boot() {
  * mid-flight: counters were left showing "0" before snapping to their real
  * value, and the scroll-triggered gauges never animated at all because their
  * triggers had been killed while the DOM still carried their first-appearance
- * claim. Booting once per URL rather than once per event fixes it.
+ * claim.
+ *
+ * Only that single first event may be skipped, and only when it really is the
+ * cold-load duplicate. Every later `livewire:navigated` means the body was
+ * genuinely swapped -- including a navigation back to the SAME URL, which
+ * Livewire performs for a redirect(..., navigate: true) after an action and
+ * for a click on the already-active nav item -- so a URL comparison alone
+ * would silently leave those fresh bodies without any motion wiring. The
+ * latch is consumed by the first event whether or not it was skipped.
  */
 let bootedHref = null
+let coldNavigatedSeen = false
 
 function bootFor(href) {
     bootedHref = href
@@ -320,11 +403,16 @@ if (document.readyState === 'loading') {
     bootFor(location.href)
 }
 
-// Filament SPA navigation: the body is swapped in place, so re-run everything
-// -- but only when it is genuinely a different page.
+// Filament SPA navigation: the body is swapped in place, so re-run everything.
+// A same-URL navigation swaps the body exactly like a different-URL one; the
+// only event allowed to skip the re-boot is the cold load's duplicate, once.
 document.addEventListener('livewire:navigated', () => {
-    if (bootedHref === location.href) {
-        return
+    if (!coldNavigatedSeen) {
+        coldNavigatedSeen = true
+
+        if (bootedHref === location.href) {
+            return
+        }
     }
 
     bootFor(location.href)
@@ -343,6 +431,16 @@ document.addEventListener('livewire:navigated', () => {
 let refreshQueued = false
 
 function queueRefresh() {
+    // While the arrival sequence still holds containers off their resting
+    // position, a refresh would bake those transformed measurements into every
+    // trigger -- the same hazard boot() documents for its own refreshes. The
+    // settle-point refresh boot() already scheduled re-measures the whole page
+    // at ENTRANCE_SETTLED, so a morph landing inside that window coalesces
+    // into it instead of stacking another timer.
+    if (performance.now() - bootedAt < ENTRANCE_SETTLED * 1000) {
+        return
+    }
+
     if (refreshQueued) {
         return
     }
@@ -355,9 +453,10 @@ function queueRefresh() {
 }
 
 document.addEventListener('livewire:init', () => {
-    window.Livewire?.hook?.('morphed', () => {
+    window.Livewire?.hook?.('morphed', (payload) => {
         queueRefresh()
-        bridgeUpdate()
+        bridgeUpdate(payload?.el)
+        queueMorphSweep()
     })
 })
 
@@ -371,10 +470,21 @@ document.addEventListener('livewire:init', () => {
  * the event from the v3 `morphed` hook. It is deliberately dispatched on the
  * next frame: `morphed` fires while Livewire is still writing the DOM, and a
  * listener that measures there reads a half-updated page.
+ *
+ * The component roots morphed since the last flush ride along as
+ * `detail.elements`, so a listener can scope its work to the subtrees that
+ * actually changed instead of rescanning the whole document on every poll
+ * tick. Still one dispatch per frame -- per-component dispatch would multiply
+ * every listener's work by the number of components in a burst.
  */
 let bridgeQueued = false
+const bridgeRoots = new Set()
 
-function bridgeUpdate() {
+function bridgeUpdate(root) {
+    if (root) {
+        bridgeRoots.add(root)
+    }
+
     if (bridgeQueued) {
         return
     }
@@ -382,7 +492,13 @@ function bridgeUpdate() {
     bridgeQueued = true
     requestAnimationFrame(() => {
         bridgeQueued = false
-        document.dispatchEvent(new CustomEvent('livewire:update', { bubbles: true }))
+
+        const elements = Array.from(bridgeRoots)
+        bridgeRoots.clear()
+
+        document.dispatchEvent(
+            new CustomEvent('livewire:update', { bubbles: true, detail: { elements } }),
+        )
     })
 }
 

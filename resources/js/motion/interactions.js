@@ -114,9 +114,10 @@ const CSS = `
    so the rule keeps applying \`transform: none\` forever after the animation
    ends -- and a CSS animation outranks inline styles, which would silently
    erase every transform GSAP writes to a stat card. Higher specificity turns it
-   off. The attribute is only added on first hover, long after the entrance has
-   played, and is deliberately never removed again: putting \`animation\` back
-   would restart it. */
+   off. The attribute is only added on hover, and enterCard holds it back until
+   the card's running animations have finished -- landing it mid-entrance would
+   cancel the keyframe and snap the card to its end state. It is deliberately
+   never removed again: putting \`animation\` back would restart it. */
 .fi-wi-stats-overview-stat[data-vf-pointer] {
     animation: none;
 }
@@ -129,8 +130,12 @@ const CSS = `
 
 /* Filament already sets this (its badge container is absolutely positioned
    against the button); restated so the sheen cannot be broken by a future
-   upstream change without the sheen rule visibly moving with it. */
-.fi-btn[data-vf-pointer] {
+   upstream change without the sheen rule visibly moving with it. Wrapped in
+   :where() so it has zero specificity: it is a fallback, never an override.
+   A button positioned by a utility class (an \`.absolute\` copy button pinned
+   to a corner) must keep that positioning -- at (0,2,0) this rule would beat
+   the utility and yank the button back into flow on first hover. */
+:where(.fi-btn[data-vf-pointer]) {
     position: relative;
 }
 
@@ -287,7 +292,15 @@ export function interactions({ gsap, MOTION }) {
     const write = createWriter(scope)
     const rectOf = createRectCache(scope)
 
-    pressFeedback({ gsap, MOTION, clamp, scope, owned })
+    // Press feedback and the magnet live in sibling closures, but they write to
+    // the same inline transform: the magnet holds x/y on a hovered button while
+    // a press tweens scale on top of it. The press's cleanup must not wipe a
+    // translation the magnet still owns, so cursorSurfaces installs the real
+    // "is this button hot and magnetic?" check here for pressFeedback to read.
+    // The default says no -- correct on coarse pointers, where no magnet runs.
+    const magnetState = { isHotMagnet: () => false }
+
+    pressFeedback({ gsap, MOTION, clamp, scope, owned, isHotMagnet: (element) => magnetState.isHotMagnet(element) })
     sidebarIndicator({ gsap, MOTION, scope, owned })
 
     // Cursor-reactive work only. On a touch device there is no cursor to react
@@ -296,7 +309,7 @@ export function interactions({ gsap, MOTION }) {
     gsap.matchMedia().add('(pointer: fine)', () => {
         const fine = createScope()
 
-        cursorSurfaces({ gsap, MOTION, clamp, scope: fine, owned, write, rectOf })
+        cursorSurfaces({ gsap, MOTION, clamp, scope: fine, owned, write, rectOf, magnetState })
 
         return () => fine.dispose()
     })
@@ -446,6 +459,11 @@ function createRectCache(scope) {
     scope.on(window, 'scroll', invalidate, { passive: true, capture: true })
     scope.on(window, 'resize', invalidate, { passive: true })
 
+    // A Livewire morph can reflow the page around a surviving hovered element
+    // (a poll adding a table row shifts everything below it) without firing
+    // scroll or resize -- the same reason sidebarIndicator re-measures on it.
+    scope.on(document, 'livewire:update', invalidate)
+
     return (element) => {
         const hit = cache.get(element)
 
@@ -478,8 +496,15 @@ function isDisabled(element) {
  * yielding under your finger, which is the whole difference. Not gated on
  * pointer type -- a touch press deserves the same acknowledgement.
  */
-function pressFeedback({ gsap, MOTION, clamp, scope, owned }) {
-    const PRESSABLE = '.fi-btn, .fi-icon-btn'
+function pressFeedback({ gsap, MOTION, clamp, scope, owned, isHotMagnet }) {
+    // Collapse toggles are excluded: their chevron flip is Filament's computed
+    // `rotate` riding the CSS transition icons.js retimes, and GSAP folds a
+    // computed rotate into the inline matrix as it tweens (icons.js rule #4:
+    // never tween the button, only the glyph). Scaling the button here would
+    // bake the old orientation into an inline transform and mask the flip for
+    // the whole press window.
+    const PRESSABLE =
+        '.fi-btn, .fi-icon-btn:not(.fi-section-collapse-btn):not(.fi-sidebar-group-collapse-btn)'
     let pressed = null
 
     const release = () => {
@@ -496,7 +521,18 @@ function pressFeedback({ gsap, MOTION, clamp, scope, owned }) {
                 duration: MOTION.base,
                 ease: MOTION.spring,
                 overwrite: 'auto',
-                onComplete: () => gsap.set(element, { clearProps: 'transform,willChange' }),
+                onComplete: () => {
+                    // While the cursor still rests on a magnetic button, its
+                    // x/y is live state held by the magnet's quickTo tweens --
+                    // clearing the transform here would snap the button back
+                    // to rest under a pointer it is supposed to lean toward.
+                    // leaveButton clears everything once the hover truly ends.
+                    if (isHotMagnet(element)) {
+                        return
+                    }
+
+                    gsap.set(element, { clearProps: 'transform,transformOrigin,willChange' })
+                },
             }),
         )
     }
@@ -563,13 +599,23 @@ function pressFeedback({ gsap, MOTION, clamp, scope, owned }) {
  * costs three null checks when nothing is hovered, and no element anywhere holds
  * a listener of its own.
  */
-function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf }) {
+function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf, magnetState }) {
     const magnets = new WeakMap()
     const tilts = new WeakMap()
 
     let hotButton = null
     let hotCard = null
     let hotRow = null
+
+    // Installed for pressFeedback (a sibling closure with no view of this
+    // state): "hot" alone is not enough -- only magnetic buttons carry a live
+    // x/y worth protecting from the press's cleanup. Reset on dispose so a
+    // media-query flip back to coarse cannot leave the check pointing at a
+    // dead closure.
+    magnetState.isHotMagnet = (element) => element === hotButton && magnets.has(element)
+    scope.add(() => {
+        magnetState.isHotMagnet = () => false
+    })
 
     /* --- magnets --------------------------------------------------------- */
 
@@ -670,11 +716,13 @@ function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf }) {
 
         // will-change is a promise to the compositor. Left set on every button
         // the pointer has ever crossed, a busy page ends up holding dozens of
-        // layers it no longer needs.
+        // layers it no longer needs. transform-origin rides along: a press may
+        // have pinned it to the contact point, and clearProps only removes the
+        // properties it is explicitly given.
         owned(() =>
             gsap.delayedCall(0.6, () => {
                 if (button !== hotButton) {
-                    gsap.set(button, { clearProps: 'transform,willChange' })
+                    gsap.set(button, { clearProps: 'transform,transformOrigin,willChange' })
                 }
             }),
         )
@@ -698,7 +746,25 @@ function cursorSurfaces({ gsap, MOTION, clamp, scope, owned, write, rectOf }) {
     }
 
     const enterCard = (card) => {
-        card.setAttribute('data-vf-pointer', '')
+        // The attribute switches the entrance keyframes off (see the
+        // `animation: none` rule above). Landing it while the entrance is
+        // still mid-flight would cancel the animation and snap the card to
+        // its end state in one frame, so it waits for the card's running
+        // animations to finish first. Setting it late is safe -- the
+        // attribute is only ever additive -- and the entrance's fill-mode
+        // masks the hover transforms until then anyway.
+        const running = typeof card.getAnimations === 'function' ? card.getAnimations() : []
+
+        if (running.length) {
+            Promise.allSettled(running.map((animation) => animation.finished)).then(() => {
+                if (card.isConnected) {
+                    card.setAttribute('data-vf-pointer', '')
+                }
+            })
+        } else {
+            card.setAttribute('data-vf-pointer', '')
+        }
+
         tiltFor(card)
 
         owned(() => {

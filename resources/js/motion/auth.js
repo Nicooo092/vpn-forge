@@ -850,7 +850,18 @@ function watchForm(api) {
      * @param {HTMLElement} next  the form Filament just swapped in
      */
     function handover(next) {
-        const tl = gsap.timeline({ defaults: { ease: MOTION.ease } })
+        /* Built through owned(): this runs from the MutationObserver, long
+           after the module's synchronous boot, so a bare timeline here would
+           belong to no context -- the runtime's revert could not kill it, and
+           the start states its children write to the freshly swapped-in fields
+           would keep animating on a screen the runtime believes it has already
+           torn down. failure() above makes the same detour for the same
+           reason. */
+        const tl = owned(() => gsap.timeline({ defaults: { ease: MOTION.ease } }))
+
+        if (!tl) {
+            return
+        }
 
         /* The heading and subheading were rewritten by the same response -- the
            card is asking a different question now, so it says so. */

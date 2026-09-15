@@ -361,9 +361,17 @@ export function counters({ gsap, ScrollTrigger, MOTION }) {
                 settled = true
 
                 if (element.isConnected) {
-                    // The original string, not a re-render of it: this restores
-                    // the surrounding whitespace exactly as Blade emitted it.
-                    element.textContent = original
+                    // The ORIGINAL attribute first, the closure only as the
+                    // fallback: a poll can morph a fresh reading in while the
+                    // count is running, and live.js refreshes the attribute to
+                    // the server's newest text on every morph -- the closure
+                    // only knows the value this count started from, and writing
+                    // it back would clobber that newer reading. Either way it
+                    // is the raw string, not a re-render, so the surrounding
+                    // whitespace goes back exactly as Blade emitted it.
+                    const current = element.getAttribute(ORIGINAL)
+
+                    element.textContent = current !== null ? current : original
                     element.removeAttribute(IN_FLIGHT)
                     element.removeAttribute(ORIGINAL)
                 }
@@ -518,16 +526,13 @@ export function counters({ gsap, ScrollTrigger, MOTION }) {
                 return
             }
 
-            // charts.js reaches the real Chart.js instance and draws the series
-            // properly. Where it has taken a canvas, this generic clip wipe is
-            // both redundant and harmful: two triggers on the same node, firing
-            // at different scroll offsets, each clipping and unclipping it. The
-            // specialist wins; this stays as the fallback for any chart it could
-            // not adopt.
-            if (canvas.hasAttribute('data-vf-chart')) {
-                return
-            }
-
+            // charts.js may later reach the real Chart.js instance behind this
+            // canvas and animate the series from the inside. The two compose by
+            // design (see that file's header): this wipe reveals the canvas
+            // while that module draws within it. No exclusivity check is
+            // possible here even if one were wanted -- charts.js adopts
+            // asynchronously, after Alpine's lazy chart component loads, so at
+            // this moment no canvas can carry its mark yet.
             canvas.setAttribute(CLAIMED, '')
 
             const wipe = () => {

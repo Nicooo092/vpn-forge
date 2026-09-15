@@ -57,11 +57,16 @@
             btn.addEventListener('click', function () {
                 text.select();
                 var done = function () { btn.textContent = copiedLabel; setTimeout(function () { btn.textContent = copyLabel; }, 1500); };
+                // 'Copied' must only appear when the clipboard actually holds the
+                // config: execCommand reports refusal via its return value (and the
+                // rejection path runs after the user-activation window, where
+                // browsers commonly refuse it), so done() is gated on that result --
+                // on failure the label stays put and the selected textarea remains
+                // the manual fallback.
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text.value).then(done, function () { document.execCommand('copy'); done(); });
+                    navigator.clipboard.writeText(text.value).then(done, function () { if (document.execCommand('copy')) done(); });
                 } else {
-                    document.execCommand('copy');
-                    done();
+                    if (document.execCommand('copy')) done();
                 }
             });
         })();

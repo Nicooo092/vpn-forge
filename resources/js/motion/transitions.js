@@ -653,6 +653,22 @@ export function pageTransitions({ gsap, MOTION }) {
             return false
         }
 
+        /*
+         * text.js may have claimed this heading. When its split succeeds it
+         * kills entrance.js's tween and clears the opacity-0 from-state
+         * synchronously, before this module boots (motion.js runs textReveal
+         * ahead of pageTransitions) -- so the heading is already fully opaque
+         * with its words rising inside their masks, and an opaque ghost flown
+         * on top of it reads as the title doubled, not as a handover. The
+         * cross-fade below only works over entrance's own opacity ramp, which
+         * survives exactly when the split was refused and the attribute is
+         * absent. `data-vf-text` is text.js's OWNED marker, present for the
+         * whole life of a split.
+         */
+        if (heading.hasAttribute('data-vf-text')) {
+            return false
+        }
+
         const text = normalise(heading.textContent)
 
         if (!text || text.length > MAX_LABEL_CHARS) {
@@ -805,9 +821,31 @@ export function pageTransitions({ gsap, MOTION }) {
         document,
         'keydown',
         (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                capture(event)
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return
             }
+
+            // capture() pays for synchronous rect and computed-style reads on
+            // the input path, so it must run once per activation, not once per
+            // key auto-repeat frame -- only the first press can start a
+            // navigation anyway.
+            if (event.repeat) {
+                return
+            }
+
+            // Enter or Space inside an editable control is typing, not an
+            // activation, and a form field can sit inside the very anchors
+            // capture() matches (a search input in a table row). Measuring
+            // there is layout work spent on a keystroke that navigates nowhere.
+            if (
+                event.target &&
+                typeof event.target.closest === 'function' &&
+                event.target.closest('input, textarea, select, [contenteditable]')
+            ) {
+                return
+            }
+
+            capture(event)
         },
         { passive: true, capture: true },
     )

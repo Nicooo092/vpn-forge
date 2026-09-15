@@ -28,6 +28,12 @@
 @source '../../../../resources/views/**/*.blade.php';
 @source '../../../../vendor/filament/**/*.blade.php';
 
+/* Filament plugins ship Blade views of their own, outside vendor/filament: the
+   2FA/passkey plugin's pages carry raw Tailwind utilities that render unstyled
+   unless their packages are scanned too. */
+@source '../../../../vendor/stephenjude/**/*.blade.php';
+@source '../../../../vendor/spatie/**/*.blade.php';
+
 /* The motion layer is imported last and deliberately left UNLAYERED: Tailwind
    and Filament both emit their rules inside cascade layers, and unlayered CSS
    outranks layered CSS, so these transitions win without a single !important. */

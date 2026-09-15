@@ -654,9 +654,19 @@ function farewell({ gsap, MOTION, tier, stored }) {
     shell.setAttribute(OWNED, 'farewell')
     shell.setAttribute('aria-hidden', 'true')
 
+    /* Pinned to where the widget actually stood, so the replay reads as the
+       checklist finishing rather than as a copy of it materialising full-width
+       at the top of the page over unrelated widgets. The stored geometry can be
+       missing -- an older snapshot, or a measurement that failed -- and the
+       top-of-page position is the fallback rather than no farewell at all. */
+    const box = stored.box
+    const placed = box && Number.isFinite(box.top) && Number.isFinite(box.left) && box.width > 0
+
     // Below Filament's sticky topbar (30) and its modal overlay (40), above the
     // page content it is standing in front of.
-    shell.style.cssText = 'position:absolute;top:0;left:0;right:0;z-index:20;pointer-events:none'
+    shell.style.cssText = placed
+        ? `position:absolute;top:${box.top}px;left:${box.left}px;width:${box.width}px;z-index:20;pointer-events:none`
+        : 'position:absolute;top:0;left:0;right:0;z-index:20;pointer-events:none'
 
     if ('inert' in HTMLElement.prototype) {
         shell.inert = true
@@ -791,12 +801,46 @@ export function onboardingJourney({ gsap, ScrollTrigger, MOTION }) {
        path -- and the farewell would then replay on the wrong page. */
     const path = window.location.pathname
 
+    /* Where the widget actually sits, measured against the same container the
+       farewell will mount its overlay in. Without it the replay could only ever
+       pin itself to the top of the page -- full width, over whatever widget
+       happens to live there now -- instead of standing where the checklist
+       stood. Measured inside record() rather than captured once, so the
+       navigating-time snapshot reflects any resize since the page loaded. */
+    const measureBox = () => {
+        const mount =
+            document.querySelector('.fi-page-content') ?? document.querySelector('.fi-main')
+
+        if (!mount || !journey.widget.isConnected) {
+            return null
+        }
+
+        const box = journey.widget.getBoundingClientRect()
+
+        if (!box.width) {
+            return null
+        }
+
+        const anchor = mount.getBoundingClientRect()
+
+        // Relative to the mount's padding box, which is what `top`/`left` on an
+        // absolutely positioned child resolve against: clientTop/Left step over
+        // the border, scrollTop/Left put the offset into the mount's own
+        // scrolled coordinates.
+        return {
+            top: Math.round(box.top - anchor.top - mount.clientTop + mount.scrollTop),
+            left: Math.round(box.left - anchor.left - mount.clientLeft + mount.scrollLeft),
+            width: Math.round(box.width),
+        }
+    }
+
     const record = () =>
         writeState({
             path,
             steps: signature,
             at: Date.now(),
             html: snapshotHtml(journey.widget),
+            box: measureBox(),
         })
 
     record()

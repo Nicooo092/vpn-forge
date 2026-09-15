@@ -516,7 +516,13 @@ export function healthGauges({ gsap, ScrollTrigger, MOTION }) {
                 return
             }
 
-            if (gauge.intro.isActive()) {
+            /* totalProgress(), not isActive(): the intro is created with a
+               per-card stagger delay, and isActive() reports false for the
+               whole of it. Skipping the kill there would orphan an intro that
+               plays anyway once its delay elapses -- re-hiding the ring and
+               dragging the needle back to the reading captured when it was
+               built, which is exactly the "wrong ring" this module forbids. */
+            if (gauge.intro.totalProgress() < 1) {
                 gauge.intro.kill()
                 gauge.track.style.strokeDashoffset = '0'
                 gsap.set(gauge.root, {
@@ -584,7 +590,10 @@ export function healthGauges({ gsap, ScrollTrigger, MOTION }) {
 
             // A morph that lands mid-intro leaves the intro tweening a node that
             // is no longer in the document. Restart it on the node that is.
-            if (gauge.shown && gauge.intro && gauge.intro.isActive()) {
+            // totalProgress(), not isActive(): an intro still inside its stagger
+            // delay reports inactive, and a morph landing in that window would
+            // otherwise leave it playing against the detached node.
+            if (gauge.shown && gauge.intro && gauge.intro.totalProgress() < 1) {
                 gauge.intro.kill()
                 gauge.intro = null
                 gauge.shown = false

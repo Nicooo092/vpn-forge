@@ -374,7 +374,11 @@ export function emptyStates({ gsap, ScrollTrigger, MOTION }) {
         }
 
         if (seen.size >= SIGNATURE_LIMIT) {
-            seen.clear()
+            // Oldest out, one at a time -- a Set iterates in insertion order.
+            // Wiping the lot would forget the base resting state along with
+            // everything else, and every forgotten state's next re-render
+            // replays an arrival the operator has already been shown.
+            seen.delete(seen.values().next().value)
         }
 
         seen.add(signature)

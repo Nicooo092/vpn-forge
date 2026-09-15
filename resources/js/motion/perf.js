@@ -737,13 +737,19 @@ function force(value) {
     signals.override = readOverride()
     settle(wanted === null ? 'override cleared' : `override "${wanted}"`, false)
 
-    // A pinned verdict has nothing to watch for; an automatic one does.
+    // A pinned verdict has nothing to watch for; an automatic one does -- and
+    // if this page's boot never built a sampler at all (the verdict was hard,
+    // or the tier sat at the bottom with nothing to earn back), going back to
+    // automatic has to construct one now, or "automatic" would hold no
+    // watchdog until the next navigation re-ran the module.
     if (sampler) {
         if (base.hard) {
             sampler.stop()
         } else {
             sampler.start()
         }
+    } else {
+        startWatchdog(scope)
     }
 
     info(`motion override is now ${wanted === null ? 'automatic' : `"${wanted}"`}`)
@@ -1123,16 +1129,42 @@ export function perfGovernor({ gsap }) {
         info(`${describe()} -- override with localStorage["${STORAGE_KEY}"] = off|low|medium|high`)
     }
 
+    startWatchdog(host)
+
+    return null
+}
+
+/**
+ * Build and start the frame-rate watchdog for the current run.
+ *
+ * A helper rather than inline in perfGovernor() because it has two callers:
+ * the boot itself, and force() -- an operator clearing a pinned override on a
+ * page whose boot never created a sampler (the verdict was hard, or the tier
+ * sat at the bottom with nothing to earn back) has switched to "automatic",
+ * and automatic without a watchdog is automatic in name only until the next
+ * navigation. All the "is a watchdog even worth having" decisions live here,
+ * so the two callers cannot drift apart.
+ *
+ * @param {object} host  the teardown bag of the run asking for a watchdog
+ */
+function startWatchdog(host) {
+    /* Guarded on the LIVE scope: force() runs from the console at any moment,
+       and a host a navigation has since disposed must not be handed a sampler
+       whose disposers will never run again. */
+    if (!host || host !== scope || sampler) {
+        return
+    }
+
     /* A pinned or forced verdict is a decision, not an estimate: there is
        nothing for the watchdog to find out. */
     if (base.hard) {
-        return null
+        return
     }
 
     /* At the bottom with no restoration left to earn, measuring costs the
        weakest device in the fleet something for no possible benefit. */
     if (tier === 'low' && !upgrades) {
-        return null
+        return
     }
 
     const watchdog = createSampler(host, (sample) => {
@@ -1226,6 +1258,4 @@ export function perfGovernor({ gsap }) {
     })
 
     watchdog.start()
-
-    return null
 }

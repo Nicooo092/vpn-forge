@@ -64,15 +64,38 @@
                     {{ __("The panel never updates itself -- that is a deliberate boundary, so the web process can't redeploy the server. Connect over SSH and run this:") }}
                 </p>
 
+                {{-- navigator.clipboard exists only in secure contexts and this
+                     panel is routinely served over plain HTTP (see the warning on
+                     the Backups page), so the copy button must carry the same
+                     textarea + execCommand fallback as the config-link reveal
+                     page -- and 'Copied' may only appear when a copy actually
+                     succeeded, never on a rejected or refused attempt. --}}
                 <div
                     x-data="{
                         command: @js($this->getUpgradeCommand()),
                         copied: false,
                         copy() {
-                            navigator.clipboard.writeText(this.command).then(() => {
+                            const markCopied = () => {
                                 this.copied = true;
                                 setTimeout(() => this.copied = false, 1500);
-                            });
+                            };
+                            const fallback = () => {
+                                const scratch = document.createElement('textarea');
+                                scratch.value = this.command;
+                                scratch.setAttribute('readonly', '');
+                                scratch.style.position = 'absolute';
+                                scratch.style.left = '-9999px';
+                                document.body.appendChild(scratch);
+                                scratch.select();
+                                const ok = document.execCommand('copy');
+                                document.body.removeChild(scratch);
+                                if (ok) markCopied();
+                            };
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(this.command).then(markCopied, fallback);
+                            } else {
+                                fallback();
+                            }
                         },
                     }"
                     class="relative"

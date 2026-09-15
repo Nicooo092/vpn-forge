@@ -73,6 +73,13 @@ const OWNED = 'data-vf-overlay'
  *  fire one. */
 const LEAVING = 'data-vf-overlay-out'
 
+/** An incrementing stamp written onto every modal as its entrance runs and
+ *  removed when it closes. Needed because `querySelectorAll` returns DOCUMENT
+ *  order, which is render order, not open order -- a modal rendered earlier in
+ *  the page can be the one that just opened over another, and the id-less
+ *  fallback in `resolve()` must find the most recent open, not the last node. */
+const OPEN_ORDER = 'data-vf-modal-order'
+
 /**
  * The signature arrival curve: a damped oscillator, sampled as three bezier
  * segments. `back.out()` can only overshoot once and then stop, which reads as a
@@ -307,13 +314,16 @@ function injectStylesheet(scope) {
     // and the custom properties would keep a half-depleted countdown bar drawn
     // on a toast nobody is timing any more.
     scope.add(() => {
-        document.querySelectorAll(`[${OWNED}], [${LEAVING}]`).forEach((element) => {
-            element.removeAttribute(OWNED)
-            element.removeAttribute(LEAVING)
-            element.style.removeProperty('--vf-modal-blur')
-            element.style.removeProperty('--vf-modal-sat')
-            element.style.removeProperty('--vf-toast-p')
-        })
+        document
+            .querySelectorAll(`[${OWNED}], [${LEAVING}], [${OPEN_ORDER}]`)
+            .forEach((element) => {
+                element.removeAttribute(OWNED)
+                element.removeAttribute(LEAVING)
+                element.removeAttribute(OPEN_ORDER)
+                element.style.removeProperty('--vf-modal-blur')
+                element.style.removeProperty('--vf-modal-sat')
+                element.style.removeProperty('--vf-toast-p')
+            })
     })
 }
 
@@ -410,6 +420,11 @@ function regionsOf(parent, selectors) {
 function modalMotion({ gsap, MOTION, scope, owned }) {
     const nextFrame = createFrames(scope)
 
+    // Monotonic within a run; the stamps it mints are swept with the other
+    // attributes on teardown, so a re-run starting over at zero cannot be
+    // outranked by a stale stamp from the previous page.
+    let openSeq = 0
+
     const resolve = (id) => {
         if (id) {
             // Filament modal ids contain dots (`component.actions.create`), so
@@ -421,12 +436,30 @@ function modalMotion({ gsap, MOTION, scope, owned }) {
             }
         }
 
-        // A modal declared without an id has none to announce. The topmost open
-        // one is the one that just opened -- the same assumption Filament's own
-        // `isTopmost()` makes.
+        // A modal declared without an id has none to announce. Open ORDER is
+        // what identifies the one that just opened, and document order cannot
+        // stand in for it: an open modal that has not yet been stamped by an
+        // entrance is the new arrival, and failing that the highest stamp is
+        // the most recent open.
         const open = document.querySelectorAll('.fi-modal.fi-modal-open')
 
-        return open.length ? open[open.length - 1] : null
+        let latest = null
+        let best = -1
+
+        for (const candidate of open) {
+            const stamp = candidate.getAttribute(OPEN_ORDER)
+
+            if (stamp === null) {
+                return candidate
+            }
+
+            if (Number(stamp) > best) {
+                best = Number(stamp)
+                latest = candidate
+            }
+        }
+
+        return latest
     }
 
     const partsOf = (win) =>
@@ -439,6 +472,12 @@ function modalMotion({ gsap, MOTION, scope, owned }) {
             return
         }
 
+        // Stamped on every entrance, id or not: two id-less modals opening in
+        // the same frame each resolve in turn, and the first one's stamp is
+        // what steers the second resolve() away from it.
+        openSeq += 1
+        modal.setAttribute(OPEN_ORDER, String(openSeq))
+
         const win = modal.querySelector(':scope > .fi-modal-window-ctn > .fi-modal-window')
         const overlay = modal.querySelector(':scope > .fi-modal-close-overlay')
 
@@ -450,17 +489,18 @@ function modalMotion({ gsap, MOTION, scope, owned }) {
             owned(() =>
                 gsap.fromTo(
                     overlay,
-                    { scale: 1.06, '--vf-modal-blur': 0, '--vf-modal-sat': 1 },
+                    { '--vf-modal-blur': 0, '--vf-modal-sat': 1 },
                     {
-                        // The backdrop settles back to rest while it defocuses,
-                        // so the page reads as pushed away rather than covered.
-                        scale: 1,
+                        // Never a transform on this element: a transform on a
+                        // backdrop-filtered surface visibly transforms the
+                        // filtered snapshot of the entire page behind it
+                        // (Chromium's "magnifier" behaviour), so the recede is
+                        // carried by the blur/saturation ramps alone.
                         '--vf-modal-blur': ramp ? BACKDROP_BLUR : BACKDROP_REST,
                         '--vf-modal-sat': ramp ? 1.06 : 1,
                         duration: MOTION.slow * 0.5,
                         ease: MOTION.easeSoft,
                         overwrite: 'auto',
-                        clearProps: 'transform,transformOrigin',
                     },
                 ),
             )
@@ -614,6 +654,10 @@ function modalMotion({ gsap, MOTION, scope, owned }) {
             return
         }
 
+        // A closed modal is out of the open-order race; a stale stamp left
+        // here would let a reopened sibling outrank a genuinely newer open.
+        modal.removeAttribute(OPEN_ORDER)
+
         const win = modal.querySelector(':scope > .fi-modal-window-ctn > .fi-modal-window')
         const overlay = modal.querySelector(':scope > .fi-modal-close-overlay')
 
@@ -638,14 +682,14 @@ function modalMotion({ gsap, MOTION, scope, owned }) {
         if (overlay) {
             owned(() =>
                 gsap.to(overlay, {
-                    scale: 1.03,
+                    // Filter ramps only -- the same constraint as the entrance:
+                    // a transform here would zoom the filtered page snapshot.
                     '--vf-modal-blur': 0,
                     '--vf-modal-sat': 1,
                     duration: 0.18,
                     ease: 'power2.in',
                     overwrite: 'auto',
                     onComplete: () => {
-                        gsap.set(overlay, { clearProps: 'transform,transformOrigin' })
                         // clearProps is unreliable for custom properties, and a
                         // blur left declared on a hidden overlay is a filter the
                         // compositor keeps honouring.
@@ -719,6 +763,17 @@ function dropdownMotion({ gsap, MOTION, clamp, scope, owned }) {
             if (byId && byId.classList.contains('fi-dropdown-panel')) {
                 return byId
             }
+        }
+
+        // The fallback below may only ever match the trigger side of a
+        // dropdown. Anything carrying aria-expanded INSIDE the panel -- a
+        // combobox, a disclosure, a widget in an inline modal a dropdown item
+        // hosts -- is also a descendant of `.fi-dropdown`, and resolving it
+        // here would attribute the widget's toggles to the panel itself:
+        // closing the widget would then play the panel's exit over an open
+        // menu and desynchronise the open/closed bookkeeping.
+        if (element.closest && element.closest('.fi-dropdown-panel')) {
+            return null
         }
 
         const root = element.closest ? element.closest('.fi-dropdown') : null

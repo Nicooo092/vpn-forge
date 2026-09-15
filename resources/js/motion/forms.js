@@ -98,6 +98,7 @@ const INTERESTING = [
     '.fi-fo-repeater-item',
     '.fi-fo-builder-item',
     '.fi-select-input-option',
+    '.fi-sc-wizard-step',
 ].join(', ')
 
 /* Flex containers of chips: tag inputs and the value badges of a multi-select.
@@ -212,9 +213,10 @@ export function forms({ gsap, MOTION }) {
     const collections = collectionFeedback(shared)
 
     controlFeedback(shared).attach()
-    wizardSteps(shared)
 
-    watchMutations({ ...shared, validation, collections })
+    const wizards = wizardSteps(shared)
+
+    watchMutations({ ...shared, validation, collections, wizards })
 
     // The one Livewire-side signal that is exactly what it says: Filament
     // dispatches it from InteractsWithSchemas whenever a save or an action fails
@@ -233,11 +235,12 @@ export function forms({ gsap, MOTION }) {
         })
     })
 
-    // A navigation must not leave a form mid-gesture behind it: the page is
-    // about to be replaced, and anything still holding an inline opacity would
-    // be handed to the next render.
-    scope.on(document, 'livewire:navigating', () => scope.dispose(), { once: true })
-
+    // Deliberately NO self-dispose on `livewire:navigating`. Teardown belongs
+    // to the runtime: the nested context above hands scope.dispose() to its
+    // revert(), which runs on every genuine boot. A navigating-time dispose
+    // would be fatal on a same-URL navigation -- the runtime skips the reboot
+    // when the href has not changed, so nothing would ever recreate the scope
+    // and the whole module would fall silent for the rest of the session.
     return null
 }
 
@@ -1139,7 +1142,7 @@ function collectionFeedback({ gsap, MOTION, scope, owned, alive, failsafe }) {
  * re-creates rows every 30-60s. Those records are dropped by the first check in
  * the loop, before anything is queried.
  */
-function watchMutations({ gsap, scope, owned, alive, failsafe, validation, collections }) {
+function watchMutations({ gsap, scope, owned, alive, failsafe, validation, collections, wizards }) {
     if (typeof MutationObserver !== 'function') {
         return
     }
@@ -1188,6 +1191,16 @@ function watchMutations({ gsap, scope, owned, alive, failsafe, validation, colle
             if (element.matches(LIST_ITEM)) {
                 items.push(element)
                 grew.add(element.parentElement)
+
+                return
+            }
+
+            // A wizard that was not on the page at boot -- mounted late inside
+            // an action modal, or rebuilt wholesale by a morph -- has steps the
+            // attribute observer has never been handed. Adoption is idempotent,
+            // so re-seeing a step already being watched costs a WeakSet lookup.
+            if (element.matches('.fi-sc-wizard-step')) {
+                wizards.adopt(element.closest('.fi-sc-wizard'))
 
                 return
             }
@@ -1345,18 +1358,17 @@ function watchMutations({ gsap, scope, owned, alive, failsafe, validation, colle
  * directly -- an attribute observer on the steps themselves, which is a handful
  * of nodes rather than the whole document.
  *
+ * Wizards are not only a boot-time population: one can mount later inside an
+ * action modal, or a morph can rebuild the step nodes wholesale under a wizard
+ * that survived. The attribute observer only ever fires for nodes it has been
+ * handed, so the mutation pass feeds newly seen steps back in through `adopt`.
+ *
  * Direction comes from comparing document order, so "back" genuinely reads as
  * going back rather than as another forward slide.
  */
 function wizardSteps({ gsap, MOTION, scope, owned, alive, failsafe, rtl }) {
     if (typeof MutationObserver !== 'function') {
-        return
-    }
-
-    const wizards = gsap.utils.toArray('.fi-sc-wizard')
-
-    if (!wizards.length) {
-        return
+        return { adopt() {} }
     }
 
     const observer = new MutationObserver((records) => {
@@ -1387,6 +1399,12 @@ function wizardSteps({ gsap, MOTION, scope, owned, alive, failsafe, rtl }) {
     /* Where each wizard was when we last looked. A Map, not an attribute: this
        is bookkeeping, not state the page should carry. */
     const positions = new Map()
+
+    /* Steps already under observation. Keyed by STEP rather than by wizard: a
+       morph can replace the step nodes wholesale while the wizard node itself
+       survives, and a wizard-level mark would leave the observer watching the
+       detached originals. */
+    const bound = new WeakSet()
 
     const stepsOf = (wizard) =>
         gsap.utils
@@ -1501,24 +1519,46 @@ function wizardSteps({ gsap, MOTION, scope, owned, alive, failsafe, rtl }) {
         }
     }
 
-    wizards.forEach((wizard) => {
+    /**
+     * Put one wizard under observation: seed its position and watch its steps.
+     * Idempotent, so the mutation pass may call it for every wizard subtree it
+     * happens to see without stacking observers or re-seeding a known one.
+     */
+    function adopt(wizard) {
+        if (!wizard || !wizard.isConnected) {
+            return
+        }
+
         const steps = stepsOf(wizard)
 
         if (!steps.length) {
             return
         }
 
-        // Recorded, not animated: the step an operator lands on is where they
-        // already are, and sliding it in would be the panel narrating a
-        // transition that never happened.
-        positions.set(
-            wizard,
-            Math.max(
-                0,
-                steps.findIndex((step) => step.classList.contains('fi-active')),
-            ),
-        )
+        if (!positions.has(wizard)) {
+            // Recorded, not animated: the step an operator lands on is where
+            // they already are, and sliding it in would be the panel narrating
+            // a transition that never happened.
+            positions.set(
+                wizard,
+                Math.max(
+                    0,
+                    steps.findIndex((step) => step.classList.contains('fi-active')),
+                ),
+            )
+        }
 
-        steps.forEach((step) => observer.observe(step, { attributes: true, attributeFilter: ['class'] }))
-    })
+        steps.forEach((step) => {
+            if (bound.has(step)) {
+                return
+            }
+
+            bound.add(step)
+            observer.observe(step, { attributes: true, attributeFilter: ['class'] })
+        })
+    }
+
+    gsap.utils.toArray('.fi-sc-wizard').forEach(adopt)
+
+    return { adopt }
 }

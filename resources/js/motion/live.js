@@ -526,10 +526,9 @@ export function liveData({ gsap, MOTION }) {
             return 0
         }
 
-        /* Read before anything below can write. `stopRoll` settles a roll that
-           is still running by putting ITS remembered string back, so a read
-           taken after it would capture a reading two polls old and then hand it
-           back as the final value. */
+        /* Read before anything below can write: `stopRoll` settles a roll that
+           is still running, and this read has to capture what Livewire just put
+           on screen, not what that settle writes over it. */
         const raw = element.textContent
 
         const from = describe(fromText)
@@ -538,6 +537,13 @@ export function liveData({ gsap, MOTION }) {
         if (!from || !to || from.value === to.value) {
             return 0
         }
+
+        /* Stopped BEFORE the kind check, not after: whatever is decided below,
+           an in-flight roll must not keep repainting readings older than the
+           one Livewire just wrote -- refusing to start a new roll is no reason
+           to let the old one finish on stale frames. Its settle puts the
+           refreshed ORIGINAL back, so it lands no older than this morph. */
+        stopRoll(element)
 
         /* The two readings have to be the same KIND of thing. A stat that went
            from "1.9 GB" to "412 MB" is not a number that changed, it is a
@@ -552,8 +558,6 @@ export function liveData({ gsap, MOTION }) {
         ) {
             return 0
         }
-
-        stopRoll(element)
 
         const direction = to.value > from.value ? 1 : -1
 
@@ -571,9 +575,17 @@ export function liveData({ gsap, MOTION }) {
             rolling.delete(element)
 
             if (element.isConnected) {
-                /* The raw string, not a re-render of it: this puts back the
-                   whitespace exactly as Blade emitted it. */
-                element.textContent = raw
+                /* The ORIGINAL attribute first, the closure's string only as
+                   the fallback: a second morph can land while this roll is in
+                   flight, and inspect() refreshes the attribute to the server's
+                   newest text at that moment. The closure only knows the
+                   reading this roll was started for; the attribute is never
+                   older than it. Either way it is the raw string, not a
+                   re-render -- the whitespace goes back exactly as Blade
+                   emitted it. */
+                const current = element.getAttribute(ORIGINAL)
+
+                element.textContent = current !== null ? current : raw
                 element.removeAttribute(IN_FLIGHT)
                 element.removeAttribute(ORIGINAL)
             }
@@ -688,6 +700,23 @@ export function liveData({ gsap, MOTION }) {
            whole scan is free of the thing that would make it expensive. */
         for (let i = 0; i < candidates.length; i += 1) {
             const element = candidates[i]
+
+            /* At `morphed` the DOM is the server's current answer, so any
+               element whose text a tween owns -- one of our rolls or a
+               counters.js count-up -- gets its remembered restore string
+               refreshed here, before signature() reads it. Whichever settle()
+               eventually runs then writes back the newest reading instead of
+               the one its tween was started from. Never on the boot pass:
+               there the text may be a counter mid-count, which was never a
+               reading at all. */
+            if (!silent && element.hasAttribute(ORIGINAL)) {
+                const truth = element.textContent
+
+                if (element.getAttribute(ORIGINAL) !== truth) {
+                    element.setAttribute(ORIGINAL, truth)
+                }
+            }
+
             const now = signature(element)
             const before = seen.get(element)
 

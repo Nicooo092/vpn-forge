@@ -318,11 +318,18 @@ export function searchPalette({ gsap, MOTION }) {
 
         const rtl = getComputedStyle(ctn).direction === 'rtl'
 
+        /* The RTL offset must be measured against the LAYOUT viewport
+           (documentElement.clientWidth): both getBoundingClientRect and a
+           fixed element's `right` resolve there, while window.innerWidth also
+           counts a classic scrollbar and would push the rail that many pixels
+           into the result text. */
         return {
             top: Math.round(top),
             height: Math.round(height),
             left: rtl ? null : Math.round(ctnRect.left + 3),
-            right: rtl ? Math.round(window.innerWidth - ctnRect.right + 3) : null,
+            right: rtl
+                ? Math.round(document.documentElement.clientWidth - ctnRect.right + 3)
+                : null,
         }
     }
 
@@ -339,6 +346,13 @@ export function searchPalette({ gsap, MOTION }) {
         if (railFlip) {
             railFlip.kill()
             railFlip = null
+            // A kill mid-travel leaves Flip's partial translate/scaleY inline,
+            // and the next placeRail-only path (first appearance, or a resync)
+            // writes top/left AROUND that stale transform -- the rail would
+            // reappear offset and stretched. Hand transform back here; the
+            // kill inside moveRail needs no such clear because Flip.getState
+            // measures the visual state and compensates.
+            gsap.set(rail, { clearProps: 'transform' })
         }
 
         if (!railShown) {
@@ -454,6 +468,10 @@ export function searchPalette({ gsap, MOTION }) {
             if (railFlip) {
                 railFlip.kill()
                 railFlip = null
+                // Same constraint as hideRail: placeRail writes no transform,
+                // so a transform the killed flip left mid-flight would offset
+                // the freshly measured position until the next animated move.
+                gsap.set(rail, { clearProps: 'transform' })
             }
 
             placeRail(geometry)

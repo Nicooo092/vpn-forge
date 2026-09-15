@@ -145,19 +145,28 @@ const SWIPE_FADE_FLOOR = 0.35
 
 /* --- Pull tuning --------------------------------------------------------- */
 
-/**
- * Whether the primary pointer is a finger rather than a mouse or trackpad.
- * Read live rather than cached, because a hybrid laptop can switch between the
- * two without a reload.
- */
-function coarsePointer() {
-    return window.matchMedia('(pointer: coarse)').matches
-}
-
 const PULL_MAX = 92
 const PULL_TRIGGER = 62
 const PULL_RESISTANCE = 0.42
 const PULL_COOLDOWN = 5
+
+/* Deliberate-pull detection. A trackpad keeps delivering upward deltas after
+   the fingers have left the pad, and leftover momentum must never refresh the
+   dashboard. Three facts separate a pull from a flick's tail, and the pull is
+   fed only while all three hold:
+
+     - a pull is a NEW run of deltas: at least PULL_RUN_GAP ms of wheel silence
+       precede it, where momentum is the uninterrupted continuation of a scroll;
+     - it begins with the page already at rest at the top -- momentum arriving
+       as the page hits the top belongs to a run that began while the page was
+       still scrolling;
+     - its deltas hold or grow for as long as the fingers stay down, where
+       momentum decays on every event -- so a delta must have held or grown
+       within the last PULL_DECAY_MS, and the run must be at least
+       PULL_INTENT_MS old, which is longer than the on-pad phase of a flick. */
+const PULL_RUN_GAP = 200
+const PULL_INTENT_MS = 300
+const PULL_DECAY_MS = 120
 
 /* Controls a drag must never start from: their own gesture, their own drag, or
    a click we would be stealing. `img` is here because browsers make images
@@ -439,6 +448,24 @@ function motionEnabled() {
 /** True while a Filament modal is open anywhere on the page. */
 function modalIsOpen() {
     return Boolean(document.querySelector('.fi-modal.fi-modal-open'))
+}
+
+/**
+ * True while `card` is hosting an open overlay -- the table's filters dropdown
+ * or an action modal, both of which Filament renders inside `.fi-ta-ctn`. A
+ * live transform would make the card the containing block for their
+ * `position: fixed` boxes (see CONTAINING BLOCKS in the header), so a card in
+ * this state must not lean at all, even transiently.
+ *
+ * The dropdown is read off `aria-expanded` rather than the panel's own
+ * visibility: Filament's `syncAria()` keeps the attribute truthful on every
+ * close path including click-away, while the panel hides via inline `display`
+ * and `x-float.teleport` can move it out of the card entirely.
+ */
+function overlayOpenIn(card) {
+    return Boolean(
+        card.querySelector('.fi-modal.fi-modal-open, .fi-dropdown [aria-expanded="true"]'),
+    )
 }
 
 /**
@@ -887,7 +914,10 @@ function panHint({ gsap, ScrollTrigger, MOTION, owned, leaned, settleCard }) {
  * way whichever input reached them.
  */
 function bumpCard({ gsap, MOTION, owned, leaned, settleCard, clamp }, card, direction, force) {
-    if (!card || !card.isConnected) {
+    // The overlay check lives here, on the shared path, so the wheel bump and
+    // both fling bumps obey the same rule the pan hint and the pull already do:
+    // never transform a card while something anchored to it is open.
+    if (!card || !card.isConnected || overlayOpenIn(card)) {
         return
     }
 
@@ -955,6 +985,16 @@ function wheelPhysics({ gsap, MOTION, clamp, scope, owned, leaned, settleCard, e
     /* Set once per pull: the wheel landed inside a scroller of its own that
        still has somewhere to go, so the delta was never spare. */
     let blocked = false
+
+    /* The current run of upward wheel deltas -- see the PULL_RUN_* constants.
+       `runRiseAt` is the last moment a delta held or grew rather than decayed,
+       which is the heartbeat of a hand still on the input; it starts at zero so
+       a fresh run cannot feed the pull before its first genuine rise. */
+    let runStartAt = 0
+    let runLastAt = 0
+    let runRiseAt = 0
+    let runPrevDelta = 0
+    let runFromTop = false
 
     const buildChip = () => {
         if (chip || !refreshable) {
@@ -1334,8 +1374,11 @@ function toastSwipe({ gsap, MOTION, clamp, scope, owned }) {
      * Ask Filament to close this notification. The button is the honest route --
      * it is the same control a keyboard user would press. The window event is
      * the fallback for a notification rendered without one; `wire:key` is
-     * `{id}.notifications.{id}`, which is the only place the id exists in the
-     * DOM.
+     * `{livewireComponentId}.notifications.{notificationId}`, which is the only
+     * place the notification's id exists in the DOM -- and it has to be the
+     * segment AFTER the separator, because the card's own `close-notification`
+     * listener compares `detail.id` against the notification's id, not the
+     * Livewire component's.
      */
     const close = (toast) => {
         const button = toast.querySelector('.fi-no-notification-close-btn')
@@ -1351,7 +1394,7 @@ function toastSwipe({ gsap, MOTION, clamp, scope, owned }) {
         }
 
         const key = toast.getAttribute('wire:key') || ''
-        const id = key.split('.notifications.')[0]
+        const id = key.split('.notifications.')[1] || ''
 
         if (!id) {
             return false

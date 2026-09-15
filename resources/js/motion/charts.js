@@ -863,9 +863,12 @@ export function charts({ gsap, ScrollTrigger, MOTION }) {
         owners.set(chart, own)
         adopted.push(chart)
 
-        // Tells counters.js to leave this canvas alone. It has a generic
-        // clip-path reveal for charts it cannot reach; where this module has the
-        // real Chart instance, two reveals on one node would fight.
+        // Marks the canvas as one this module owns; release() takes the mark
+        // back on teardown. counters.js runs its generic clip-path wipe on this
+        // canvas regardless -- by the time this attribute exists its boot-time
+        // scan has long passed -- and the two compose by design (see the
+        // header): the wipe reveals the canvas while this module draws the
+        // series rising inside it.
         chart.canvas?.setAttribute('data-vf-chart', '')
 
         armLegendTransitions(own)
@@ -1084,6 +1087,18 @@ export function charts({ gsap, ScrollTrigger, MOTION }) {
             },
         )
 
+        const chart = chartOf(frame)
+        const own = chart ? owners.get(chart) : null
+
+        // Adoption is checked BEFORE the canvas is dimmed: only an adopted
+        // chart gets the morph the dip exists to cover, and only an adopted
+        // canvas is reached by release()'s residue sweep. Dipping an unadopted
+        // one would buy nothing and leave its only way back to full opacity on
+        // a timer a teardown can clear.
+        if (!chart || !own || !own.raw) {
+            return
+        }
+
         dip(canvas)
 
         let restored = false
@@ -1102,13 +1117,6 @@ export function charts({ gsap, ScrollTrigger, MOTION }) {
 
         // The ceiling on the dip, held whatever the request does.
         scope.timer(restore, DIP_HOLD_MS)
-
-        const chart = chartOf(frame)
-        const own = chart ? owners.get(chart) : null
-
-        if (!chart || !own || !own.raw) {
-            return
-        }
 
         const points = chart.data && Array.isArray(chart.data.labels) ? chart.data.labels.length : 0
 
